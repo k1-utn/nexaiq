@@ -1,0 +1,33 @@
+from functools import lru_cache
+
+from pydantic import Field
+from pydantic_settings import BaseSettings, SettingsConfigDict
+
+
+class Settings(BaseSettings):
+    model_config = SettingsConfigDict(
+        env_file=(".env", ".env.local"),
+        env_prefix="NEXAIQ_",
+        extra="ignore",
+    )
+
+    environment: str = "development"
+    max_estimate_bytes: int = 15 * 1024 * 1024
+    allowed_origins_raw: str = Field(
+        default="http://localhost:3000", alias="NEXAIQ_ALLOWED_ORIGINS"
+    )
+    max_pdf_pages: int = 250
+    supabase_url: str | None = Field(default=None, alias="SUPABASE_URL")
+    supabase_publishable_key: str | None = Field(default=None, alias="SUPABASE_PUBLISHABLE_KEY")
+
+    @property
+    def allowed_origins(self) -> list[str]:
+        return [origin.strip() for origin in self.allowed_origins_raw.split(",") if origin.strip()]
+
+
+@lru_cache
+def get_settings() -> Settings:
+    return Settings()
+
+
+settings = get_settings()

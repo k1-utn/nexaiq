@@ -1,0 +1,2 @@
+-- Deliberately no production-like customer or employee data.
+-- Local demo tenants should be created by a developer-owned seed command after Auth users exist.
