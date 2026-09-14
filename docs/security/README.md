@@ -11,6 +11,8 @@
 - Audit rows are append-oriented; client update/delete grants are revoked.
 - Estimate uploads validate content type, signature, size, encryption, and page count.
 - Uploaded content is data, never instructions.
+- Parsed estimate source rows are immutable to browser roles; human corrections append a superseding, attributable review.
+- Estimate review writes use invoker privileges plus RLS. Elevated trigger functions are not directly executable by application roles.
 
 ## Required before pilot
 

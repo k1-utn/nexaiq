@@ -26,6 +26,17 @@ export const aiResultSchema = z.object({
 export type AiResult = z.infer<typeof aiResultSchema>;
 export type HumanDecision = z.infer<typeof humanDecisionSchema>;
 
+export const estimateLineReviewDecisionSchema = z.enum([
+  "confirmed",
+  "corrected",
+  "excluded",
+  "needs_review",
+]);
+
+export type EstimateLineReviewDecision = z.infer<
+  typeof estimateLineReviewDecisionSchema
+>;
+
 export const PRODUCT_LANGUAGE = {
   candidate: "Potential finding",
   supplement: "Possible supplement candidate",

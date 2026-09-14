@@ -16,6 +16,7 @@ Create migrations with the pinned CLI before editing them, then review and apply
 
 ```powershell
 npm exec supabase -- migration new <descriptive-name>
+npm exec supabase -- db push --linked --dry-run
 npm exec supabase -- db push --linked
 ```
 
@@ -29,3 +30,5 @@ npm exec supabase -- db lint --linked --level warning
 For optional GitHub-hosted database checks, configure `SUPABASE_ACCESS_TOKEN` and `SUPABASE_PROJECT_ID` as repository secrets and set the repository variable `RUN_HOSTED_SUPABASE_TESTS` to `true`.
 
 Use only publishable keys in the web, mobile, and API app configuration. The API forwards each authenticated user's bearer token so PostgreSQL RLS remains the authorization boundary.
+
+Estimate source versions and parsed lines are not updateable or deleteable by browser roles. Human verification is stored as an append-only review chain. Client inserts pass through database-controlled derivation and RLS, while the public review function runs with the caller's normal privileges.

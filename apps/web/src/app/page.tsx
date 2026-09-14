@@ -24,11 +24,21 @@ export default async function Home() {
       .order("updated_at", { ascending: false })
       .limit(1),
   ]);
+  const repairOrderId = repairOrders?.[0]?.id ?? null;
+  const { data: estimateVersions } = repairOrderId
+    ? await supabase
+        .from("estimate_versions")
+        .select("id")
+        .eq("repair_order_id", repairOrderId)
+        .order("version_number", { ascending: false })
+        .limit(1)
+    : { data: null };
   return (
     <Dashboard
       organizationId={organizationId}
       organizationName={organization?.name ?? "Current organization"}
-      repairOrderId={repairOrders?.[0]?.id ?? null}
+      repairOrderId={repairOrderId}
+      latestEstimateVersionId={estimateVersions?.[0]?.id ?? null}
     />
   );
 }

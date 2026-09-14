@@ -2,7 +2,7 @@
 
 Legal-first repair execution intelligence for collision-repair professionals.
 
-This repository contains the sealed Stage 1 foundation and a protected estimate-ingestion proof slice. nexaIQ is decision-support software: AI output remains a candidate until a qualified person reviews it. It does not certify repairs, vehicle safety, OEM compliance, or payment.
+This repository contains the sealed Stage 1 foundation and the Stage 2 estimate-ingestion and human-verification workflow. nexaIQ is decision-support software: AI output remains a candidate until a qualified person reviews it. It does not certify repairs, vehicle safety, OEM compliance, or payment.
 
 ## Workspace
 
@@ -48,7 +48,7 @@ The database checks execute inside transactions and roll back, but they must onl
 
 ## Current scope
 
-Implemented: workspace foundation, dashboard, mobile hero screen, auth clients, tenant schema, RBAC model, append-oriented audit events, private media, AI job/result/model provenance, legal acceptance and retention records, secure PDF validation, deterministic estimate parsing, human verification status, and tests.
+Implemented: workspace foundation, dashboard, mobile hero screen, auth clients, tenant schema, RBAC model, append-oriented audit events, private media, AI job/result/model provenance, legal acceptance and retention records, secure PDF validation, deterministic estimate parsing, immutable source lines, superseding human line reviews, derived estimate verification status, and cross-tenant tests.
 
 Not implemented: automatic Mitchell write-back, insurer submission, repair approval, calibration approval, or any autonomous safety-critical decision.
 

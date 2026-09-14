@@ -1,12 +1,13 @@
 "use client";
 
 import { useRef, useState } from "react";
+import Link from "next/link";
+import { useRouter } from "next/navigation";
 import {
   AlertTriangle,
   ArrowUpRight,
   Bell,
   Building2,
-  Check,
   ChevronDown,
   CircleDot,
   ClipboardCheck,
@@ -31,9 +32,7 @@ import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { cn } from "@/lib/utils";
 import { createClient as createBrowserSupabaseClient } from "@/lib/supabase/client";
 
-type CandidateState = "pending" | "confirmed" | "dismissed" | "review";
-
-const repairOrders = [
+const demoRepairOrders = [
   { ro: "18472", vehicle: "2025 Toyota RAV4", estimator: "Sarah J.", estimate: "Supplement 1", status: "Estimator review", tone: "amber", updated: "8 min" },
   { ro: "18468", vehicle: "2023 Ford F-150", estimator: "Mike R.", estimate: "Original", status: "Evidence requested", tone: "rose", updated: "24 min" },
   { ro: "18461", vehicle: "2024 Honda CR-V", estimator: "Sarah J.", estimate: "Supplement 2", status: "Documentation complete", tone: "green", updated: "1 hr" },
@@ -48,11 +47,18 @@ const navigation = [
   ["Audit history", History],
 ] as const;
 
-export function Dashboard({ organizationId, organizationName, repairOrderId }: { organizationId: string; organizationName: string; repairOrderId: string | null }) {
+type EstimateParseResponse = {
+  estimate_version_id: string | null;
+  persistence_status: string;
+  detail?: string;
+};
+
+export function Dashboard({ organizationId, organizationName, repairOrderId, latestEstimateVersionId }: { organizationId: string; organizationName: string; repairOrderId: string | null; latestEstimateVersionId: string | null }) {
+  const router = useRouter();
   const uploadRef = useRef<HTMLInputElement>(null);
-  const [candidate, setCandidate] = useState<CandidateState>("pending");
   const [uploadState, setUploadState] = useState<"idle" | "uploading" | "done" | "error">("idle");
   const [fileName, setFileName] = useState("");
+  const [uploadError, setUploadError] = useState("");
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
 
   async function uploadEstimate(file?: File) {
@@ -61,6 +67,7 @@ export function Dashboard({ organizationId, organizationName, repairOrderId }: {
       return;
     }
     setFileName(file.name);
+    setUploadError("");
     setUploadState("uploading");
     try {
       const form = new FormData();
@@ -77,9 +84,15 @@ export function Dashboard({ organizationId, organizationName, repairOrderId }: {
         headers,
         body: form,
       });
-      if (!response.ok) throw new Error("Upload failed");
+      const result = (await response.json().catch(() => ({}))) as EstimateParseResponse;
+      if (!response.ok) throw new Error(result.detail || `Upload failed (${response.status})`);
+      if (result.persistence_status !== "persisted" || !result.estimate_version_id) {
+        throw new Error("Estimate was parsed but not persisted");
+      }
       setUploadState("done");
-    } catch {
+      router.push(`/repair-orders/${repairOrderId}/estimate`);
+    } catch (error) {
+      setUploadError(error instanceof Error ? error.message : "The estimate could not be processed.");
       setUploadState("error");
     }
   }
@@ -134,13 +147,20 @@ export function Dashboard({ organizationId, organizationName, repairOrderId }: {
         <div className="mx-auto max-w-[1500px] space-y-6 p-4 sm:p-7">
           <div className="flex flex-col justify-between gap-4 xl:flex-row xl:items-end">
             <div><p className="text-sm text-slate-400">Thursday, September 3</p><h2 className="mt-1 text-2xl font-bold sm:text-3xl">Good evening, Sarah.</h2><p className="mt-1 text-sm text-slate-500">One critical checkpoint needs qualified review.</p></div>
-            <input ref={uploadRef} className="hidden" type="file" accept="application/pdf,.pdf" onChange={(event) => void uploadEstimate(event.target.files?.[0])} />
-            <Button size="lg" onClick={() => uploadRef.current?.click()} disabled={uploadState === "uploading" || !repairOrderId}><Upload className="size-4" />{uploadState === "uploading" ? "Validating estimate…" : "Import estimate PDF"}</Button>
+            <input ref={uploadRef} className="hidden" type="file" accept="application/pdf,.pdf" onChange={(event) => { void uploadEstimate(event.target.files?.[0]); event.currentTarget.value = ""; }} />
+            <div className="flex flex-wrap gap-2">
+              {repairOrderId && latestEstimateVersionId && (
+                <Button asChild size="lg" variant="secondary">
+                  <Link href={`/repair-orders/${repairOrderId}/estimate`}><ClipboardCheck className="size-4" />Review latest estimate</Link>
+                </Button>
+              )}
+              <Button size="lg" onClick={() => uploadRef.current?.click()} disabled={uploadState === "uploading" || !repairOrderId}><Upload className="size-4" />{uploadState === "uploading" ? "Validating estimate…" : "Import estimate PDF"}</Button>
+            </div>
           </div>
 
           {uploadState !== "idle" && (
             <div className={cn("flex items-center justify-between rounded-xl border px-4 py-3 text-sm", uploadState === "done" ? "border-emerald-300/25 bg-emerald-300/8 text-emerald-100" : uploadState === "error" ? "border-amber-300/25 bg-amber-300/8 text-amber-100" : "border-cyan-300/20 bg-cyan-300/5 text-cyan-100")}>
-              <span>{uploadState === "done" ? `${fileName} preserved and parsed. Human verification required.` : uploadState === "error" ? (repairOrderId ? `${fileName} could not be processed. Confirm the API is running and retry.` : "No repair order is available for this workspace.") : `Checking ${fileName} type, size, and content…`}</span>
+              <span>{uploadState === "done" ? `${fileName} preserved and parsed. Human verification required.` : uploadState === "error" ? (repairOrderId ? `${fileName || "Estimate"} could not be processed: ${uploadError || "confirm the API is running and retry."}` : "No repair order is available for this workspace.") : `Checking ${fileName} type, size, and content…`}</span>
               <button onClick={() => setUploadState("idle")} aria-label="Dismiss message"><X className="size-4" /></button>
             </div>
           )}
@@ -161,21 +181,21 @@ export function Dashboard({ organizationId, organizationName, repairOrderId }: {
 
           <section className="grid gap-6 xl:grid-cols-[1.55fr_.85fr]">
             <Card className="overflow-hidden">
-              <CardHeader><div><h3 className="font-bold">Recent repair orders</h3><p className="mt-1 text-sm text-slate-500">Work requiring action or recently updated</p></div><Button variant="ghost" size="sm">View all <ArrowUpRight className="size-4" /></Button></CardHeader>
+              <CardHeader><div><div className="flex items-center gap-2"><h3 className="font-bold">Recent repair orders</h3><Badge variant="cyan">Prototype data</Badge></div><p className="mt-1 text-sm text-slate-500">Visual preview only; these rows are not saved records.</p></div><Button variant="ghost" size="sm" disabled>View all <ArrowUpRight className="size-4" /></Button></CardHeader>
               <div className="overflow-x-auto">
                 <table className="w-full min-w-[760px] text-left text-sm">
                   <thead className="border-b border-white/7 text-xs uppercase tracking-wider text-slate-600"><tr>{["RO", "Vehicle", "Estimator", "Estimate", "Workflow status", "Updated", ""].map((heading) => <th className="px-5 py-3 font-semibold" key={heading}>{heading}</th>)}</tr></thead>
-                  <tbody>{repairOrders.map((item) => <tr className="border-b border-white/5 transition hover:bg-white/[.025]" key={item.ro}><td className="px-5 py-4 font-bold text-cyan-200">#{item.ro}</td><td className="px-5 py-4 font-semibold">{item.vehicle}</td><td className="px-5 py-4 text-slate-400">{item.estimator}</td><td className="px-5 py-4 text-slate-400">{item.estimate}</td><td className="px-5 py-4"><Badge variant={item.tone}>{item.status}</Badge></td><td className="px-5 py-4 text-slate-500">{item.updated}</td><td className="px-5 py-4"><button aria-label={`Actions for repair order ${item.ro}`}><MoreHorizontal className="size-4 text-slate-500" /></button></td></tr>)}</tbody>
+                  <tbody>{demoRepairOrders.map((item) => <tr className="border-b border-white/5 opacity-75" key={item.ro}><td className="px-5 py-4 font-bold text-cyan-200">#{item.ro}</td><td className="px-5 py-4 font-semibold">{item.vehicle}</td><td className="px-5 py-4 text-slate-400">{item.estimator}</td><td className="px-5 py-4 text-slate-400">{item.estimate}</td><td className="px-5 py-4"><Badge variant={item.tone}>{item.status}</Badge></td><td className="px-5 py-4 text-slate-500">{item.updated}</td><td className="px-5 py-4"><button disabled aria-label={`Prototype actions for repair order ${item.ro}`}><MoreHorizontal className="size-4 text-slate-600" /></button></td></tr>)}</tbody>
                 </table>
               </div>
             </Card>
 
             <Card>
-              <CardHeader><div><div className="mb-2 flex items-center gap-2"><Badge variant="amber">Estimator review required</Badge><span className="text-xs text-slate-600">AI confidence 81%</span></div><h3 className="text-lg font-bold">Possible RH radar bracket deformation</h3><p className="mt-1 text-sm text-slate-500">RO #18472 · 2025 Toyota RAV4</p></div></CardHeader>
+              <CardHeader><div><div className="mb-2 flex flex-wrap items-center gap-2"><Badge variant="cyan">Phase 4 preview</Badge><Badge variant="amber">Estimator review required</Badge><span className="text-xs text-slate-600">AI confidence 81%</span></div><h3 className="text-lg font-bold">Possible RH radar bracket deformation</h3><p className="mt-1 text-sm text-slate-500">Example only · no decision will be saved here</p></div></CardHeader>
               <CardContent className="space-y-5">
                 <div className="rounded-xl border border-white/7 bg-black/15 p-4"><p className="text-xs font-bold uppercase tracking-wider text-slate-500">Structured rationale</p><p className="mt-2 text-sm leading-relaxed text-slate-300">Mounting geometry appears inconsistent across two teardown images. Area is partly obscured; physical confirmation is required.</p></div>
                 <div className="space-y-2 text-sm"><div className="flex justify-between"><span className="text-slate-500">Estimate comparison</span><span>Possible omission</span></div><div className="flex justify-between"><span className="text-slate-500">Evidence</span><button className="text-cyan-200 hover:underline">2 original photos</button></div><div className="flex justify-between"><span className="text-slate-500">Source quality</span><span>Camera only</span></div></div>
-                {candidate === "pending" ? <div className="grid grid-cols-2 gap-2"><Button onClick={() => setCandidate("confirmed")}><Check className="size-4" />Confirm</Button><Button variant="secondary" onClick={() => setCandidate("review")}><AlertTriangle className="size-4" />Needs review</Button><Button className="col-span-2" variant="ghost" onClick={() => setCandidate("dismissed")}>Dismiss candidate</Button></div> : <div className="rounded-xl border border-white/8 bg-white/3 p-4"><div className="flex items-center gap-2 font-semibold"><ClipboardCheck className="size-4 text-cyan-200" />Decision recorded: {candidate.replace("_", " ")}</div><p className="mt-1 text-xs text-slate-500">A production action would require authenticated identity, reason, and an audit event.</p><Button className="mt-3" size="sm" variant="secondary" onClick={() => setCandidate("pending")}>Reset demo</Button></div>}
+                <div className="grid grid-cols-2 gap-2"><Button disabled>Confirm</Button><Button variant="secondary" disabled><AlertTriangle className="size-4" />Needs review</Button><Button className="col-span-2" variant="ghost" disabled>Dismiss candidate</Button></div>
               </CardContent>
             </Card>
           </section>

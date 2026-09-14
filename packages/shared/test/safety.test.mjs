@@ -1,6 +1,10 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { aiResultSchema, PROHIBITED_AUTOMATIONS } from "../dist/index.js";
+import {
+  aiResultSchema,
+  estimateLineReviewDecisionSchema,
+  PROHIBITED_AUTOMATIONS,
+} from "../dist/index.js";
 
 test("material AI results always require human review", () => {
   assert.throws(() => aiResultSchema.parse({
@@ -16,4 +20,9 @@ test("material AI results always require human review", () => {
 
 test("high-impact automation denylist includes supplement submission", () => {
   assert.ok(PROHIBITED_AUTOMATIONS.includes("submit_supplement"));
+});
+
+test("estimate verification accepts only explicit human review decisions", () => {
+  assert.equal(estimateLineReviewDecisionSchema.parse("corrected"), "corrected");
+  assert.throws(() => estimateLineReviewDecisionSchema.parse("auto_approved"));
 });
