@@ -31,6 +31,8 @@ The FastAPI endpoint validates MIME, magic bytes, size, encryption, and page cou
 
 The web verification workspace displays the preserved PDF beside its structured lines. A reviewer can confirm, correct, exclude, or defer each line. Decisions append to `estimate_line_reviews`; a new decision supersedes the prior decision without rewriting or deleting history. Database triggers derive tenant, version, reviewer identity, timestamps, completion state, and audit events. An estimate becomes `verified` only when every parsed line has a final human decision. This status documents source verification only and does not approve repair work or release a vehicle.
 
+Domain rule: clear-coat operations are automatically added by the estimating workflow. nexaIQ must preserve them when present for provenance, but downstream supplement detection must not report clear coat as a missing operation or proposed supplement.
+
 ## Scale
 
 Stateless APIs can scale horizontally. PostgreSQL indexes lead with `organization_id` for tenant-filtered workloads. Blob bytes remain in private storage while relational metadata stays queryable. AI jobs are explicit, idempotency-ready records instead of unbounded background agents.
