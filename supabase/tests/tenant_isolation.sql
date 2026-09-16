@@ -7,7 +7,7 @@ declare
 begin
   select required.table_name
     into missing_table
-    from unnest(array['organizations', 'repair_orders', 'audit_events', 'media', 'estimate_line_reviews'])
+    from unnest(array['organizations', 'repair_orders', 'audit_events', 'media', 'estimate_line_reviews', 'scan_session_media'])
       as required(table_name)
     where to_regclass('public.' || required.table_name) is null
     limit 1;
@@ -18,7 +18,7 @@ begin
 
   select required.table_name
     into rls_disabled_table
-    from unnest(array['organizations', 'repair_orders', 'audit_events', 'media', 'estimate_line_reviews'])
+    from unnest(array['organizations', 'repair_orders', 'audit_events', 'media', 'estimate_line_reviews', 'scan_session_media'])
       as required(table_name)
     join pg_class c on c.oid = to_regclass('public.' || required.table_name)
     where not c.relrowsecurity

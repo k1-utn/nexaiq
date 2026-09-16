@@ -1,7 +1,7 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.api.routes import estimate_ingestion, health
+from app.api.routes import estimate_ingestion, evidence, health
 from app.core.config import settings
 
 app = FastAPI(
@@ -18,3 +18,4 @@ app.add_middleware(
 )
 app.include_router(health.router)
 app.include_router(estimate_ingestion.router, prefix="/v1/estimate-ingestion")
+app.include_router(evidence.router, prefix="/v1/evidence")

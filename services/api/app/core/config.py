@@ -17,6 +17,8 @@ class Settings(BaseSettings):
         default="http://localhost:3000", alias="NEXAIQ_ALLOWED_ORIGINS"
     )
     max_pdf_pages: int = 250
+    max_capture_photo_bytes: int = 8 * 1024 * 1024
+    max_capture_voice_bytes: int = 20 * 1024 * 1024
     supabase_url: str | None = Field(default=None, alias="SUPABASE_URL")
     supabase_publishable_key: str | None = Field(default=None, alias="SUPABASE_PUBLISHABLE_KEY")
 

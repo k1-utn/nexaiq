@@ -1,40 +1,59 @@
+import type { Session } from "@supabase/supabase-js";
 import { StatusBar } from "expo-status-bar";
-import { SafeAreaView, ScrollView, StyleSheet, Text, TouchableOpacity, View } from "react-native";
+import { useEffect, useState } from "react";
+import { ActivityIndicator, SafeAreaView, StyleSheet, Text, View } from "react-native";
 
-const secondaryActions = ["VIEW ESTIMATE", "VIEW FINDINGS", "REPAIR WORKFLOW", "EVIDENCE"];
+import { LoginScreen } from "./src/components/LoginScreen";
+import { RepairOrderList } from "./src/components/RepairOrderList";
+import { ScanCaptureScreen } from "./src/components/ScanCaptureScreen";
+import { isMobileConfigured, supabase } from "./src/lib/supabase";
+import type { OrganizationContext, RepairOrder } from "./src/types";
 
 export default function App() {
-  return (
-    <SafeAreaView style={styles.safe}>
-      <StatusBar style="light" />
-      <ScrollView contentContainerStyle={styles.page}>
-        <View style={styles.brandRow}><View style={styles.mark}><Text style={styles.markText}>N</Text></View><Text style={styles.brand}>nexa<Text style={styles.accent}>IQ</Text></Text><View style={styles.beta}><Text style={styles.betaText}>BETA</Text></View></View>
-        <View style={styles.eyebrowRow}><Text style={styles.eyebrow}>ACTIVE REPAIR ORDER</Text><Text style={styles.synced}>● Synced 10:42 AM</Text></View>
-        <Text style={styles.ro}>RO #18472</Text>
-        <Text style={styles.vehicle}>2025 Toyota RAV4</Text>
+  const [session, setSession] = useState<Session | null>(null);
+  const [loadingSession, setLoadingSession] = useState(true);
+  const [organization, setOrganization] = useState<OrganizationContext | null>(null);
+  const [selectedRepairOrder, setSelectedRepairOrder] = useState<RepairOrder | null>(null);
 
-        <View style={styles.summary}>
-          <View><Text style={styles.label}>CURRENT ESTIMATE</Text><Text style={styles.value}>Supplement 1</Text></View>
-          <View style={styles.divider} />
-          <View><Text style={styles.label}>WORKFLOW</Text><Text style={styles.value}>96% documented</Text></View>
-        </View>
+  useEffect(() => {
+    if (!isMobileConfigured) {
+      setLoadingSession(false);
+      return;
+    }
+    void supabase.auth.getSession().then(({ data }) => {
+      setSession(data.session);
+      setLoadingSession(false);
+    });
+    const { data } = supabase.auth.onAuthStateChange((_event, nextSession) => {
+      setSession(nextSession);
+      if (!nextSession) {
+        setOrganization(null);
+        setSelectedRepairOrder(null);
+      }
+    });
+    return () => data.subscription.unsubscribe();
+  }, []);
 
-        <TouchableOpacity accessibilityRole="button" style={styles.primary}><Text style={styles.primaryIcon}>⌗</Text><View><Text style={styles.primaryText}>SCAN FOR SUPPLEMENT</Text><Text style={styles.primarySub}>Capture teardown evidence</Text></View></TouchableOpacity>
+  if (!isMobileConfigured) {
+    return <Shell><View style={styles.centered}><Text style={styles.title}>Mobile setup required</Text><Text style={styles.body}>Add EXPO_PUBLIC_SUPABASE_URL, EXPO_PUBLIC_SUPABASE_PUBLISHABLE_KEY, and EXPO_PUBLIC_API_URL to apps/mobile/.env.local, then restart Expo.</Text></View></Shell>;
+  }
+  if (loadingSession) {
+    return <Shell><View style={styles.centered}><ActivityIndicator color="#67e8f9" size="large" /></View></Shell>;
+  }
+  if (!session) return <Shell><LoginScreen /></Shell>;
+  if (selectedRepairOrder && organization) {
+    return <Shell><ScanCaptureScreen repairOrder={selectedRepairOrder} organization={organization} session={session} onBack={() => setSelectedRepairOrder(null)} /></Shell>;
+  }
+  return <Shell><RepairOrderList onOrganizationLoaded={setOrganization} onSelectRepairOrder={setSelectedRepairOrder} /></Shell>;
+}
 
-        <View style={styles.grid}>{secondaryActions.map((action) => <TouchableOpacity accessibilityRole="button" key={action} style={styles.secondary}><Text style={styles.secondaryIcon}>{action === "VIEW ESTIMATE" ? "≡" : action === "VIEW FINDINGS" ? "◎" : action === "REPAIR WORKFLOW" ? "✓" : "▧"}</Text><Text style={styles.secondaryText}>{action}</Text></TouchableOpacity>)}</View>
-
-        <View style={styles.notice}><Text style={styles.noticeTitle}>HUMAN REVIEW REQUIRED</Text><Text style={styles.noticeBody}>AI output remains a candidate until confirmed by a qualified repair professional.</Text></View>
-      </ScrollView>
-    </SafeAreaView>
-  );
+function Shell({ children }: { children: React.ReactNode }) {
+  return <SafeAreaView style={styles.safe}><StatusBar style="light" />{children}</SafeAreaView>;
 }
 
 const styles = StyleSheet.create({
-  safe: { flex: 1, backgroundColor: "#071018" }, page: { padding: 22, paddingTop: 30 },
-  brandRow: { flexDirection: "row", alignItems: "center", marginBottom: 42 }, mark: { width: 38, height: 38, borderRadius: 11, backgroundColor: "rgba(103,232,249,.12)", borderWidth: 1, borderColor: "rgba(103,232,249,.25)", alignItems: "center", justifyContent: "center" }, markText: { color: "#67e8f9", fontWeight: "900" }, brand: { color: "#f2f7fa", fontSize: 24, fontWeight: "900", marginLeft: 10 }, accent: { color: "#67e8f9" }, beta: { marginLeft: "auto", backgroundColor: "rgba(103,232,249,.1)", paddingHorizontal: 9, paddingVertical: 5, borderRadius: 99 }, betaText: { color: "#a5f3fc", fontSize: 11, fontWeight: "800", letterSpacing: 1 },
-  eyebrowRow: { flexDirection: "row", justifyContent: "space-between", marginBottom: 10 }, eyebrow: { color: "#67e8f9", fontSize: 11, fontWeight: "800", letterSpacing: 1.4 }, synced: { color: "#64748b", fontSize: 11 }, ro: { color: "#f8fafc", fontSize: 34, lineHeight: 40, fontWeight: "900" }, vehicle: { color: "#94a3b8", fontSize: 18, marginTop: 3, marginBottom: 26 },
-  summary: { flexDirection: "row", backgroundColor: "#0d1925", borderWidth: 1, borderColor: "rgba(255,255,255,.08)", borderRadius: 16, padding: 18, marginBottom: 18 }, divider: { width: 1, backgroundColor: "rgba(255,255,255,.08)", marginHorizontal: 18 }, label: { color: "#64748b", fontSize: 10, letterSpacing: 1.2, fontWeight: "800", marginBottom: 7 }, value: { color: "#e2e8f0", fontSize: 15, fontWeight: "700" },
-  primary: { minHeight: 92, backgroundColor: "#67e8f9", borderRadius: 17, padding: 20, flexDirection: "row", alignItems: "center", marginBottom: 12 }, primaryIcon: { color: "#071018", fontSize: 34, fontWeight: "300", marginRight: 15 }, primaryText: { color: "#071018", fontSize: 17, fontWeight: "900", letterSpacing: .4 }, primarySub: { color: "#164e63", fontSize: 13, marginTop: 4 },
-  grid: { flexDirection: "row", flexWrap: "wrap", gap: 10 }, secondary: { width: "48.5%", minHeight: 105, backgroundColor: "#0d1925", borderWidth: 1, borderColor: "rgba(255,255,255,.08)", borderRadius: 15, padding: 16, justifyContent: "space-between" }, secondaryIcon: { color: "#67e8f9", fontSize: 23 }, secondaryText: { color: "#cbd5e1", fontSize: 12, fontWeight: "800", lineHeight: 17 },
-  notice: { borderLeftWidth: 3, borderLeftColor: "#fbbf24", backgroundColor: "rgba(251,191,36,.06)", padding: 15, marginTop: 18, borderRadius: 4 }, noticeTitle: { color: "#fde68a", fontSize: 11, fontWeight: "900", letterSpacing: 1 }, noticeBody: { color: "#94a3b8", fontSize: 13, lineHeight: 19, marginTop: 5 },
+  safe: { flex: 1, backgroundColor: "#071018" },
+  centered: { flex: 1, alignItems: "center", justifyContent: "center", padding: 28 },
+  title: { color: "#f8fafc", fontSize: 24, fontWeight: "900", textAlign: "center" },
+  body: { color: "#94a3b8", fontSize: 15, lineHeight: 23, marginTop: 12, textAlign: "center" },
 });

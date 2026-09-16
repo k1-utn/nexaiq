@@ -5,9 +5,32 @@
     "version": "0.1.0",
     "orientation": "portrait",
     "userInterfaceStyle": "dark",
-    "newArchEnabled": true,
-    "ios": { "supportsTablet": true, "bundleIdentifier": "ai.nexaiq.mobile" },
-    "android": { "package": "ai.nexaiq.mobile" },
-    "plugins": []
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "ai.nexaiq.mobile"
+    },
+    "android": {
+      "package": "ai.nexaiq.mobile"
+    },
+    "plugins": [
+      [
+        "expo-camera",
+        {
+          "cameraPermission": "Allow nexaIQ to capture repair evidence you intentionally add.",
+          "microphonePermission": false,
+          "recordAudioAndroid": false
+        }
+      ],
+      [
+        "expo-audio",
+        {
+          "microphonePermission": "Allow nexaIQ to record an optional repair observation.",
+          "enableBackgroundRecording": false
+        }
+      ],
+      "expo-sqlite",
+      "expo-asset",
+      "expo-status-bar"
+    ]
   }
 }

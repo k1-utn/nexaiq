@@ -109,6 +109,13 @@ declare
   latest_review_id uuid;
   direct_review_id uuid;
   returned_status text;
+  persisted_scan_session_id uuid;
+  persisted_scan_media_id uuid;
+  persisted_scan_link_id uuid;
+  duplicate_scan_session_id uuid;
+  duplicate_scan_media_id uuid;
+  duplicate_scan_link_id uuid;
+  duplicate_capture boolean;
 begin
   select array_agg(ro_number order by ro_number)
     into visible_repairs
@@ -290,6 +297,80 @@ begin
     raise exception 'mismatched source object path was accepted';
   exception
     when invalid_parameter_value then null;
+  end;
+
+  select result.scan_session_id, result.media_id, result.scan_session_media_id,
+         result.already_persisted
+    into persisted_scan_session_id, persisted_scan_media_id,
+         persisted_scan_link_id, duplicate_capture
+    from public.persist_scan_capture(
+      'a0000000-0000-4000-8000-000000000001',
+      'a4000000-0000-4000-8000-000000000001',
+      'a8000000-0000-4000-8000-000000000001',
+      'a9000000-0000-4000-8000-000000000001',
+      'aa000000-0000-4000-8000-000000000001',
+      'a0000000-0000-4000-8000-000000000001/a4000000-0000-4000-8000-000000000001/scans/a8000000-0000-4000-8000-000000000001/a9000000-0000-4000-8000-000000000001/aa000000-0000-4000-8000-000000000001/photo.jpg',
+      'photo.jpg', 'image/jpeg', 128, repeat('a', 64),
+      'photo', 0, clock_timestamp(),
+      '{"may_contain_face":false,"precise_location_collected":false}'::jsonb,
+      '{"width":2048,"height":1536}'::jsonb
+    ) as result;
+  if duplicate_capture
+     or not exists (
+       select 1 from public.scan_session_media ssm
+       where ssm.id = persisted_scan_link_id
+         and ssm.scan_session_id = persisted_scan_session_id
+         and ssm.media_id = persisted_scan_media_id
+         and ssm.organization_id = 'a0000000-0000-4000-8000-000000000001'
+         and ssm.privacy_flags ->> 'precise_location_collected' = 'false'
+     ) then
+    raise exception 'mobile capture was not persisted with tenant and privacy metadata';
+  end if;
+
+  select result.scan_session_id, result.media_id, result.scan_session_media_id,
+         result.already_persisted
+    into duplicate_scan_session_id, duplicate_scan_media_id,
+         duplicate_scan_link_id, duplicate_capture
+    from public.persist_scan_capture(
+      'a0000000-0000-4000-8000-000000000001',
+      'a4000000-0000-4000-8000-000000000001',
+      'a8000000-0000-4000-8000-000000000001',
+      'a9000000-0000-4000-8000-000000000001',
+      'aa000000-0000-4000-8000-000000000001',
+      'a0000000-0000-4000-8000-000000000001/a4000000-0000-4000-8000-000000000001/scans/a8000000-0000-4000-8000-000000000001/a9000000-0000-4000-8000-000000000001/aa000000-0000-4000-8000-000000000001/photo.jpg',
+      'photo.jpg', 'image/jpeg', 128, repeat('a', 64),
+      'photo', 0, clock_timestamp(), '{}'::jsonb, '{}'::jsonb
+    ) as result;
+  if not duplicate_capture
+     or duplicate_scan_session_id is distinct from persisted_scan_session_id
+     or duplicate_scan_media_id is distinct from persisted_scan_media_id
+     or duplicate_scan_link_id is distinct from persisted_scan_link_id then
+    raise exception 'mobile capture retry was not idempotent';
+  end if;
+
+  if not exists (
+    select 1 from public.audit_events ae
+    where ae.event_type = 'scan_capture_uploaded'
+      and ae.entity_id = persisted_scan_media_id
+      and ae.actor_id = '10000000-0000-4000-8000-000000000001'
+  ) then
+    raise exception 'mobile capture audit event is missing';
+  end if;
+
+  begin
+    perform public.persist_scan_capture(
+      'b0000000-0000-4000-8000-000000000002',
+      'b4000000-0000-4000-8000-000000000002',
+      'b8000000-0000-4000-8000-000000000002',
+      'b9000000-0000-4000-8000-000000000002',
+      'bb000000-0000-4000-8000-000000000002',
+      'b0000000-0000-4000-8000-000000000002/attack/photo.jpg',
+      'photo.jpg', 'image/jpeg', 128, repeat('b', 64),
+      'photo', 0, clock_timestamp(), '{}'::jsonb, '{}'::jsonb
+    );
+    raise exception 'tenant A persisted a capture into tenant B';
+  exception
+    when insufficient_privilege then null;
   end;
 
   begin

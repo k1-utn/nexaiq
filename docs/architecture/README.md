@@ -33,6 +33,14 @@ The web verification workspace displays the preserved PDF beside its structured 
 
 Domain rule: clear-coat operations are automatically added by the estimating workflow. nexaIQ must preserve them when present for provenance, but downstream supplement detection must not report clear coat as a missing operation or proposed supplement.
 
+## Sealed Phase 3 mobile evidence capture
+
+The Expo client lists only repair orders visible through the signed-in user's active organization. Camera and microphone permissions are requested only when the user starts the corresponding capture. Photos are stripped of EXIF data, resized, and compressed locally; voice notes are optional and background recording is disabled. Precise location is never collected. Users can flag unavoidable faces, licence plates, or customer documents before capture.
+
+Captured files are copied into the native app's durable document directory and queued with a client-generated capture identity. Uploads use the user's Supabase access token plus an explicit organization header. Failed or offline uploads remain on-device with bounded exponential retry; local files are deleted only after the API confirms durable server persistence. The server validates declared MIME type against file signatures, hashes the bytes, writes to private tenant-prefixed Storage paths, and calls an idempotent database function that links the media to a scan session and appends an audit event. Browser preview is presentation-only because it cannot provide the native durable-filesystem guarantee.
+
+Stage 3 captures are evidence, not findings or decisions. They do not approve repairs, establish OEM compliance, certify repair quality, or determine vehicle safety. AI supplement analysis remains a later phase.
+
 ## Scale
 
 Stateless APIs can scale horizontally. PostgreSQL indexes lead with `organization_id` for tenant-filtered workloads. Blob bytes remain in private storage while relational metadata stays queryable. AI jobs are explicit, idempotency-ready records instead of unbounded background agents.

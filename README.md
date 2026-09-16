@@ -2,7 +2,7 @@
 
 Legal-first repair execution intelligence for collision-repair professionals.
 
-This repository contains the sealed Stage 1 foundation and the Stage 2 estimate-ingestion and human-verification workflow. nexaIQ is decision-support software: AI output remains a candidate until a qualified person reviews it. It does not certify repairs, vehicle safety, OEM compliance, or payment.
+This repository contains the sealed Stage 1 foundation, sealed Stage 2 estimate-ingestion and human-verification workflow, and sealed Stage 3 mobile evidence-capture workflow. nexaIQ is decision-support software: AI output remains a candidate until a qualified person reviews it. It does not certify repairs, vehicle safety, OEM compliance, or payment.
 
 ## Workspace
 
@@ -29,8 +29,16 @@ npm run dev:web
 In another terminal:
 
 ```powershell
-uv run --project services/api uvicorn app.main:app --app-dir services/api --reload --port 8000
+uv run --project services/api uvicorn app.main:app --app-dir services/api --reload --host 0.0.0.0 --port 8001
 ```
+
+For mobile capture, copy `apps/mobile/.env.example` to `apps/mobile/.env.local`, replace the example LAN IP with the computer's current LAN IP, and start Expo:
+
+```powershell
+npm run dev:mobile
+```
+
+The phone and computer must be on the same private network. Scan the Expo QR code with Expo Go. Durable offline capture is a native mobile feature and is intentionally unavailable in the browser preview.
 
 Both the web app and API require a real Supabase user session. Configure the URL and publishable key in `.env.local`; never put a secret or service-role key in the app environment.
 
@@ -48,7 +56,7 @@ The database checks execute inside transactions and roll back, but they must onl
 
 ## Current scope
 
-Implemented: workspace foundation, dashboard, mobile hero screen, auth clients, tenant schema, RBAC model, append-oriented audit events, private media, AI job/result/model provenance, legal acceptance and retention records, secure PDF validation, deterministic estimate parsing, immutable source lines, superseding human line reviews, derived estimate verification status, and cross-tenant tests.
+Implemented and sealed through Stage 3: workspace foundation, dashboard, auth clients, tenant schema, RBAC model, append-oriented audit events, private media, AI job/result/model provenance, legal acceptance and retention records, secure PDF validation, deterministic estimate parsing, immutable source lines, superseding human line reviews, derived estimate verification status, and cross-tenant tests. Stage 3 includes a mobile repair-order list, privacy-aware photo batches and optional voice capture, local image compression, metadata minimization, a durable offline retry queue, authenticated uploads, and idempotent tenant-scoped persistence.
 
 Not implemented: automatic Mitchell write-back, insurer submission, repair approval, calibration approval, or any autonomous safety-critical decision.
 
