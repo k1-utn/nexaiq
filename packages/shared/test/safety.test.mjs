@@ -4,6 +4,7 @@ import {
   aiResultSchema,
   estimateLineReviewDecisionSchema,
   PROHIBITED_AUTOMATIONS,
+  supplementComparisonSchema,
 } from "../dist/index.js";
 
 test("material AI results always require human review", () => {
@@ -25,4 +26,19 @@ test("high-impact automation denylist includes supplement submission", () => {
 test("estimate verification accepts only explicit human review decisions", () => {
   assert.equal(estimateLineReviewDecisionSchema.parse("corrected"), "corrected");
   assert.throws(() => estimateLineReviewDecisionSchema.parse("auto_approved"));
+});
+
+test("clear coat exclusions cannot become supplement candidates", () => {
+  assert.throws(() => supplementComparisonSchema.parse({
+    comparisonStatus: "automatic_operation_excluded",
+    matchMethod: "none",
+    matchedEstimateLineId: null,
+    confidence: 0.99,
+    sourceQuality: "mixed",
+    evidenceIds: ["00000000-0000-0000-0000-000000000001"],
+    reason: "Clear coat is automatically included.",
+    limitations: [],
+    humanReviewRequired: true,
+    canCreateSupplementCandidate: true,
+  }));
 });

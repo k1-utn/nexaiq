@@ -30,10 +30,7 @@ def _storage_object_already_exists(response: httpx.Response) -> bool:
         return False
     if not isinstance(payload, dict):
         return False
-    codes = {
-        str(payload.get(field, "")).casefold()
-        for field in ("code", "error")
-    }
+    codes = {str(payload.get(field, "")).casefold() for field in ("code", "error")}
     return bool(codes & STORAGE_OBJECT_EXISTS_CODES)
 
 
@@ -51,6 +48,53 @@ class PersistedCapture:
     already_persisted: bool
 
 
+@dataclass(frozen=True)
+class SupplementAnalysisReadinessRecord:
+    verified_estimate_version_id: UUID | None
+    photo_count: int
+    eligible_photo_count: int
+    withheld_photo_count: int
+    voice_note_count: int
+    approved_provider_policy_count: int
+    eligible_model_version_count: int
+
+
+@dataclass(frozen=True)
+class AnalysisEvidenceReference:
+    media_id: UUID
+    object_path: str
+    mime_type: str
+    content_sha256: str
+
+
+@dataclass(frozen=True)
+class SupplementAnalysisContext:
+    ai_job_id: UUID
+    job_status: str
+    estimate_version_id: UUID
+    provider_key: str
+    model_name: str
+    provider_model_version: str | None
+    prompt_template_version: str
+    schema_version: str
+    estimate_lines: list[dict[str, object]]
+    evidence: list[AnalysisEvidenceReference]
+
+
+@dataclass(frozen=True)
+class DownloadedEvidence:
+    media_id: UUID
+    mime_type: str
+    content_sha256: str
+    data: bytes
+
+
+@dataclass(frozen=True)
+class CompletedSupplementAnalysis:
+    ai_result_id: UUID
+    created_finding_count: int
+
+
 class SupabaseGateway:
     def __init__(self) -> None:
         self.url = settings.supabase_url
@@ -59,6 +103,21 @@ class SupabaseGateway:
     @property
     def configured(self) -> bool:
         return bool(self.url and self.key)
+
+    @property
+    def server_configured(self) -> bool:
+        return bool(self.url and settings.supabase_secret_key)
+
+    def _server_headers(self, *, content_type: bool = False) -> dict[str, str]:
+        secret = settings.supabase_secret_key
+        if not self.url or not secret:
+            raise HTTPException(status_code=503, detail="Server persistence is not configured")
+        headers = {"apikey": secret}
+        if not secret.startswith("sb_secret_"):
+            headers["Authorization"] = f"Bearer {secret}"
+        if content_type:
+            headers["Content-Type"] = "application/json"
+        return headers
 
     async def persist_estimate(
         self,
@@ -196,4 +255,193 @@ class SupabaseGateway:
                 scan_session_media_id=UUID(row["scan_session_media_id"]),
                 media_id=UUID(row["media_id"]),
                 already_persisted=bool(row["already_persisted"]),
+            )
+
+    async def get_supplement_analysis_readiness(
+        self,
+        *,
+        context: RequestContext,
+        repair_order_id: UUID,
+    ) -> SupplementAnalysisReadinessRecord:
+        if not self.configured or not context.bearer_token:
+            raise HTTPException(status_code=503, detail="Supplement analysis is not configured")
+
+        headers = {
+            "apikey": str(self.key),
+            "Authorization": f"Bearer {context.bearer_token}",
+            "Content-Type": "application/json",
+        }
+        async with httpx.AsyncClient(timeout=15) as client:
+            response = await client.post(
+                f"{self.url}/rest/v1/rpc/get_supplement_analysis_readiness",
+                headers=headers,
+                json={
+                    "p_organization_id": str(context.organization_id),
+                    "p_repair_order_id": str(repair_order_id),
+                    "p_environment": settings.environment,
+                },
+            )
+        if response.status_code not in {200, 201}:
+            raise HTTPException(status_code=502, detail="Supplement readiness check failed")
+
+        payload = response.json()
+        row = payload[0] if isinstance(payload, list) and payload else payload
+        if not isinstance(row, dict):
+            raise HTTPException(status_code=502, detail="Supplement readiness response was invalid")
+        version_id = row.get("verified_estimate_version_id")
+        return SupplementAnalysisReadinessRecord(
+            verified_estimate_version_id=UUID(version_id) if version_id else None,
+            photo_count=int(row.get("photo_count", 0)),
+            eligible_photo_count=int(row.get("eligible_photo_count", 0)),
+            withheld_photo_count=int(row.get("withheld_photo_count", 0)),
+            voice_note_count=int(row.get("voice_note_count", 0)),
+            approved_provider_policy_count=int(row.get("approved_provider_policy_count", 0)),
+            eligible_model_version_count=int(row.get("eligible_model_version_count", 0)),
+        )
+
+    async def begin_supplement_analysis(
+        self,
+        *,
+        context: RequestContext,
+        repair_order_id: UUID,
+        idempotency_key: str,
+    ) -> SupplementAnalysisContext:
+        if context.actor_id is None:
+            raise HTTPException(status_code=401, detail="Authenticated user identity required")
+        headers = self._server_headers(content_type=True)
+        async with httpx.AsyncClient(timeout=20) as client:
+            response = await client.post(
+                f"{self.url}/rest/v1/rpc/begin_supplement_analysis",
+                headers=headers,
+                json={
+                    "p_actor_id": str(context.actor_id),
+                    "p_organization_id": str(context.organization_id),
+                    "p_repair_order_id": str(repair_order_id),
+                    "p_environment": settings.environment,
+                    "p_idempotency_key": idempotency_key,
+                },
+            )
+        if response.status_code not in {200, 201}:
+            raise HTTPException(status_code=409, detail="Supplement analysis prerequisites changed")
+        payload = response.json()
+        row = payload[0] if isinstance(payload, list) and payload else payload
+        if not isinstance(row, dict):
+            raise HTTPException(status_code=502, detail="Analysis context response was invalid")
+        evidence_payload = row.get("evidence")
+        lines_payload = row.get("estimate_lines")
+        if not isinstance(evidence_payload, list) or not isinstance(lines_payload, list):
+            raise HTTPException(status_code=502, detail="Analysis context was incomplete")
+        return SupplementAnalysisContext(
+            ai_job_id=UUID(row["ai_job_id"]),
+            job_status=str(row["job_status"]),
+            estimate_version_id=UUID(row["estimate_version_id"]),
+            provider_key=str(row["provider_key"]),
+            model_name=str(row["model_name"]),
+            provider_model_version=(
+                str(row["provider_model_version"]) if row.get("provider_model_version") else None
+            ),
+            prompt_template_version=str(row["prompt_template_version"]),
+            schema_version=str(row["schema_version"]),
+            estimate_lines=[dict(item) for item in lines_payload if isinstance(item, dict)],
+            evidence=[
+                AnalysisEvidenceReference(
+                    media_id=UUID(item["media_id"]),
+                    object_path=str(item["object_path"]),
+                    mime_type=str(item["mime_type"]),
+                    content_sha256=str(item["content_sha256"]),
+                )
+                for item in evidence_payload
+                if isinstance(item, dict)
+            ],
+        )
+
+    async def download_analysis_evidence(
+        self,
+        references: list[AnalysisEvidenceReference],
+    ) -> list[DownloadedEvidence]:
+        headers = self._server_headers()
+        downloaded: list[DownloadedEvidence] = []
+        total_bytes = 0
+        async with httpx.AsyncClient(timeout=45) as client:
+            for reference in references[: settings.max_analysis_photos]:
+                object_url = (
+                    f"{self.url}/storage/v1/object/repair-evidence/"
+                    f"{quote(reference.object_path, safe='/')}"
+                )
+                response = await client.get(object_url, headers=headers)
+                if response.status_code != 200:
+                    raise HTTPException(status_code=502, detail="Private evidence retrieval failed")
+                total_bytes += len(response.content)
+                if total_bytes > settings.max_analysis_photo_bytes:
+                    raise HTTPException(
+                        status_code=413,
+                        detail="Analysis evidence batch is too large",
+                    )
+                downloaded.append(
+                    DownloadedEvidence(
+                        media_id=reference.media_id,
+                        mime_type=reference.mime_type,
+                        content_sha256=reference.content_sha256,
+                        data=response.content,
+                    )
+                )
+        return downloaded
+
+    async def complete_supplement_analysis(
+        self,
+        *,
+        context: RequestContext,
+        ai_job_id: UUID,
+        provider_response_id: str,
+        candidates: list[dict[str, object]],
+        input_tokens: int,
+        output_tokens: int,
+        latency_ms: int,
+    ) -> CompletedSupplementAnalysis:
+        if context.actor_id is None:
+            raise HTTPException(status_code=401, detail="Authenticated user identity required")
+        headers = self._server_headers(content_type=True)
+        async with httpx.AsyncClient(timeout=30) as client:
+            response = await client.post(
+                f"{self.url}/rest/v1/rpc/complete_supplement_analysis",
+                headers=headers,
+                json={
+                    "p_ai_job_id": str(ai_job_id),
+                    "p_actor_id": str(context.actor_id),
+                    "p_provider_response_id": provider_response_id,
+                    "p_candidates": candidates,
+                    "p_input_tokens": input_tokens,
+                    "p_output_tokens": output_tokens,
+                    "p_latency_ms": latency_ms,
+                },
+            )
+        if response.status_code not in {200, 201}:
+            raise HTTPException(status_code=502, detail="Analysis result persistence failed")
+        payload = response.json()
+        row = payload[0] if isinstance(payload, list) and payload else payload
+        if not isinstance(row, dict):
+            raise HTTPException(status_code=502, detail="Analysis completion response was invalid")
+        return CompletedSupplementAnalysis(
+            ai_result_id=UUID(row["ai_result_id"]),
+            created_finding_count=int(row["created_finding_count"]),
+        )
+
+    async def fail_supplement_analysis(
+        self,
+        *,
+        context: RequestContext,
+        ai_job_id: UUID,
+        failure_code: str,
+    ) -> None:
+        if context.actor_id is None or not self.server_configured:
+            return
+        async with httpx.AsyncClient(timeout=15) as client:
+            await client.post(
+                f"{self.url}/rest/v1/rpc/fail_supplement_analysis",
+                headers=self._server_headers(content_type=True),
+                json={
+                    "p_ai_job_id": str(ai_job_id),
+                    "p_actor_id": str(context.actor_id),
+                    "p_failure_code": failure_code[:100],
+                },
             )

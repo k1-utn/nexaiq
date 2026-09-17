@@ -11,3 +11,5 @@ The provider router checks organization approval, permitted purpose, data catego
 ## Change management
 
 Model changes progress through development, staging, then production after evaluation-set comparison for precision, recall, false positives/negatives, structured-output reliability, latency, and cost. Material regressions block promotion. See `PRODUCT_SAFETY_RULES.md` and `AI_RISK_REGISTER.md`.
+
+Stage 4 remains fail-closed until its provider review and model evaluation are complete. Follow the [Stage 4 supplement analysis runbook](STAGE_4_RUNBOOK.md) for the activation and live verification gate.

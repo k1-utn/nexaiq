@@ -154,6 +154,11 @@ export function Dashboard({ organizationId, organizationName, repairOrderId, lat
                   <Link href={`/repair-orders/${repairOrderId}/estimate`}><ClipboardCheck className="size-4" />Review latest estimate</Link>
                 </Button>
               )}
+              {repairOrderId && (
+                <Button asChild size="lg" variant="secondary">
+                  <Link href={`/repair-orders/${repairOrderId}/supplement-analysis`}><FileSearch className="size-4" />Supplement analysis</Link>
+                </Button>
+              )}
               <Button size="lg" onClick={() => uploadRef.current?.click()} disabled={uploadState === "uploading" || !repairOrderId}><Upload className="size-4" />{uploadState === "uploading" ? "Validating estimate…" : "Import estimate PDF"}</Button>
             </div>
           </div>

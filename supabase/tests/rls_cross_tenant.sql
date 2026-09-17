@@ -35,6 +35,26 @@ insert into public.vehicles (id, organization_id, vin, year, make, model) values
 insert into public.repair_orders (id, organization_id, location_id, vehicle_id, ro_number) values
   ('a4000000-0000-4000-8000-000000000001','a0000000-0000-4000-8000-000000000001','a1000000-0000-4000-8000-000000000001','a3000000-0000-4000-8000-000000000001','A-100'),
   ('b4000000-0000-4000-8000-000000000002','b0000000-0000-4000-8000-000000000002','b1000000-0000-4000-8000-000000000002','b3000000-0000-4000-8000-000000000002','B-200');
+insert into public.findings (
+  id, organization_id, repair_order_id, finding_type, component, condition,
+  confidence, source_quality, reason, proposed_operation, candidate_key
+) values
+  (
+    'a4500000-0000-4000-8000-000000000001',
+    'a0000000-0000-4000-8000-000000000001',
+    'a4000000-0000-4000-8000-000000000001',
+    'possible_missing_operation', 'front bumper', 'removed', 0.8500, 'mixed',
+    'Photo and estimate comparison require estimator review.',
+    'R&I front bumper cover', 'test-a-front-bumper'
+  ),
+  (
+    'b4500000-0000-4000-8000-000000000002',
+    'b0000000-0000-4000-8000-000000000002',
+    'b4000000-0000-4000-8000-000000000002',
+    'possible_missing_operation', 'rear bumper', 'removed', 0.8500, 'mixed',
+    'Photo and estimate comparison require estimator review.',
+    'R&I rear bumper cover', 'test-b-rear-bumper'
+  );
 insert into storage.objects (id, bucket_id, name, owner_id) values
   ('a5000000-0000-4000-8000-000000000001','repair-evidence','a0000000-0000-4000-8000-000000000001/a4000000-0000-4000-8000-000000000001/a5000000-0000-4000-8000-000000000001/a.pdf','10000000-0000-4000-8000-000000000001'),
   ('b5000000-0000-4000-8000-000000000002','repair-evidence','b0000000-0000-4000-8000-000000000002/b4000000-0000-4000-8000-000000000002/b5000000-0000-4000-8000-000000000002/b.pdf','20000000-0000-4000-8000-000000000002');
@@ -87,6 +107,26 @@ begin
   exception
     when insufficient_privilege then null;
   end;
+
+  begin
+    perform public.record_finding_review(
+      'b4500000-0000-4000-8000-000000000002', 'confirmed', null
+    );
+    raise exception 'anonymous role reviewed a finding';
+  exception
+    when insufficient_privilege then null;
+  end;
+
+  begin
+    perform public.get_supplement_analysis_readiness(
+      'b0000000-0000-4000-8000-000000000002',
+      'b4000000-0000-4000-8000-000000000002',
+      'development'
+    );
+    raise exception 'tenant A checked supplement readiness for tenant B';
+  exception
+    when insufficient_privilege then null;
+  end;
 end;
 $$;
 reset role;
@@ -129,6 +169,38 @@ begin
     where organization_id = 'b0000000-0000-4000-8000-000000000002'
   ) then
     raise exception 'tenant A can read tenant B repair orders';
+  end if;
+
+  begin
+    perform public.record_finding_review(
+      'b4500000-0000-4000-8000-000000000002', 'confirmed', null
+    );
+    raise exception 'tenant A reviewed a tenant B finding';
+  exception
+    when insufficient_privilege then null;
+  end;
+
+  perform public.record_finding_review(
+    'a4500000-0000-4000-8000-000000000001', 'confirmed', null
+  );
+  if not exists (
+    select 1
+    from public.supplement_candidates candidate
+    where candidate.finding_id = 'a4500000-0000-4000-8000-000000000001'
+      and candidate.organization_id = 'a0000000-0000-4000-8000-000000000001'
+      and candidate.status = 'estimator_review'
+  ) then
+    raise exception 'confirmed finding did not create an estimator-review candidate';
+  end if;
+
+  if not exists (
+    select 1
+    from public.ai_evaluation_events event
+    where event.finding_id = 'a4500000-0000-4000-8000-000000000001'
+      and event.actor_id = '10000000-0000-4000-8000-000000000001'
+      and event.decision = 'confirmed'
+  ) then
+    raise exception 'finding review evaluation event was not attributed';
   end if;
 
   insert into public.repair_orders (
@@ -357,6 +429,24 @@ begin
     raise exception 'mobile capture audit event is missing';
   end if;
 
+  if not exists (
+    select 1
+    from public.get_supplement_analysis_readiness(
+      'a0000000-0000-4000-8000-000000000001',
+      'a4000000-0000-4000-8000-000000000001',
+      'development'
+    ) readiness
+    where readiness.verified_estimate_version_id = persisted_estimate_id
+      and readiness.photo_count = 1
+      and readiness.eligible_photo_count = 1
+      and readiness.withheld_photo_count = 0
+      and readiness.voice_note_count = 0
+      and readiness.approved_provider_policy_count = 0
+      and readiness.eligible_model_version_count = 0
+  ) then
+    raise exception 'supplement readiness did not report fail-closed live prerequisites';
+  end if;
+
   begin
     perform public.persist_scan_capture(
       'b0000000-0000-4000-8000-000000000002',
@@ -395,6 +485,124 @@ begin
     'a0000000-0000-4000-8000-000000000001/a4000000-0000-4000-8000-000000000001/a5000000-0000-4000-8000-000000000001/a.pdf'
   ]::text[] then
     raise exception 'tenant A storage visibility failed: %', visible_objects;
+  end if;
+end;
+$$;
+
+reset role;
+set local role service_role;
+select set_config('request.jwt.claims', '{"role":"service_role"}', true);
+
+do $$
+declare
+  provider_id uuid;
+  job_id uuid;
+  result_id uuid;
+  finding_count integer;
+begin
+  select id into provider_id
+    from public.ai_providers
+    where provider_key = 'openai';
+
+  insert into public.organization_ai_policies (
+    organization_id, provider_id, enabled, allowed_purposes,
+    allowed_data_categories, provider_training_allowed, dpa_status, approved_by
+  ) values (
+    'a0000000-0000-4000-8000-000000000001', provider_id, true,
+    array['supplement_analysis']::text[],
+    array['estimate_data', 'repair_evidence']::text[],
+    false, 'approved', '10000000-0000-4000-8000-000000000001'
+  );
+
+  insert into public.ai_model_versions (
+    organization_id, provider_id, model_name, provider_model_version,
+    prompt_template_version, schema_version, environment,
+    evaluation_status, activated_at
+  ) values (
+    'a0000000-0000-4000-8000-000000000001', provider_id,
+    'test-vision-model', 'test-snapshot', 'test-prompt-v1', 'test-schema-v1',
+    'development', 'passed', clock_timestamp()
+  );
+
+  select analysis.ai_job_id
+    into job_id
+    from public.begin_supplement_analysis(
+      '10000000-0000-4000-8000-000000000001',
+      'a0000000-0000-4000-8000-000000000001',
+      'a4000000-0000-4000-8000-000000000001',
+      'development',
+      'stage4-lifecycle-test'
+    ) analysis;
+
+  select completion.ai_result_id, completion.created_finding_count
+    into result_id, finding_count
+    from public.complete_supplement_analysis(
+      job_id,
+      '10000000-0000-4000-8000-000000000001',
+      'provider-response-test',
+      jsonb_build_array(
+        jsonb_build_object(
+          'finding_type', 'possible_missing_operation',
+          'component', 'front bumper',
+          'condition', 'removed',
+          'proposed_operation', 'R&I front bumper cover',
+          'confidence', 0.85,
+          'source_quality', 'camera_only',
+          'evidence_ids', jsonb_build_array(
+            'aa000000-0000-4000-8000-000000000001'::uuid
+          ),
+          'reason', 'No exact verified-estimate match was found.',
+          'limitations', jsonb_build_array('Human inspection is required.'),
+          'comparison_status', 'possible_missing_operation',
+          'match_method', 'none',
+          'matched_estimate_line_id', null,
+          'human_review_required', true
+        ),
+        jsonb_build_object(
+          'finding_type', 'paint_operation',
+          'component', 'front bumper',
+          'condition', 'refinished',
+          'proposed_operation', 'Add clear coat',
+          'confidence', 0.90,
+          'source_quality', 'camera_only',
+          'evidence_ids', jsonb_build_array(
+            'aa000000-0000-4000-8000-000000000001'::uuid
+          ),
+          'reason', 'Clear coat is automatic.',
+          'limitations', '[]'::jsonb,
+          'comparison_status', 'automatic_operation_excluded',
+          'match_method', 'none',
+          'matched_estimate_line_id', null,
+          'human_review_required', true
+        )
+      ),
+      100,
+      50,
+      250
+    ) completion;
+
+  if finding_count <> 1
+     or not exists (
+       select 1 from public.findings finding
+       where finding.ai_result_id = result_id
+         and finding.proposed_operation = 'R&I front bumper cover'
+         and finding.human_review_required
+     )
+     or exists (
+       select 1 from public.findings finding
+       where finding.ai_result_id = result_id
+         and finding.proposed_operation ~* '\mclear[ -]?coat\M'
+     ) then
+    raise exception 'controlled Stage 4 lifecycle did not preserve candidate safety rules';
+  end if;
+
+  if not exists (
+    select 1 from public.ai_jobs job
+    where job.id = job_id
+      and job.status = 'completed'
+      and job.provider_response_id = 'provider-response-test'
+  ) then
+    raise exception 'Stage 4 lifecycle did not complete its governed AI job';
   end if;
 end;
 $$;

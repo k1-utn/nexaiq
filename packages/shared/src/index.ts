@@ -6,6 +6,7 @@ export const humanDecisionSchema = z.enum([
   "dismissed",
   "needs_review",
   "escalated",
+  "more_evidence_requested",
 ]);
 
 export const loginCredentialsSchema = z.object({
@@ -23,8 +24,43 @@ export const aiResultSchema = z.object({
   limitations: z.array(z.string()),
 });
 
+export const supplementComparisonSchema = z.object({
+  comparisonStatus: z.enum([
+    "already_in_verified_estimate",
+    "possible_missing_operation",
+    "automatic_operation_excluded",
+    "insufficient_evidence",
+  ]),
+  matchMethod: z.enum([
+    "none",
+    "operation_code_exact",
+    "description_exact",
+    "human_linked",
+  ]),
+  matchedEstimateLineId: z.string().uuid().nullable(),
+  confidence: z.number().min(0).max(1),
+  sourceQuality: z.enum(["source_document", "camera_only", "mixed", "unknown"]),
+  evidenceIds: z.array(z.string().uuid()).min(1),
+  reason: z.string().min(1),
+  limitations: z.array(z.string()),
+  humanReviewRequired: z.literal(true),
+  canCreateSupplementCandidate: z.boolean(),
+}).superRefine((result, context) => {
+  if (
+    result.comparisonStatus !== "possible_missing_operation"
+    && result.canCreateSupplementCandidate
+  ) {
+    context.addIssue({
+      code: "custom",
+      path: ["canCreateSupplementCandidate"],
+      message: "Only a possible missing operation may become a review candidate",
+    });
+  }
+});
+
 export type AiResult = z.infer<typeof aiResultSchema>;
 export type HumanDecision = z.infer<typeof humanDecisionSchema>;
+export type SupplementComparison = z.infer<typeof supplementComparisonSchema>;
 
 export const estimateLineReviewDecisionSchema = z.enum([
   "confirmed",

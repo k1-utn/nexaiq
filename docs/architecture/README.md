@@ -39,7 +39,17 @@ The Expo client lists only repair orders visible through the signed-in user's ac
 
 Captured files are copied into the native app's durable document directory and queued with a client-generated capture identity. Uploads use the user's Supabase access token plus an explicit organization header. Failed or offline uploads remain on-device with bounded exponential retry; local files are deleted only after the API confirms durable server persistence. The server validates declared MIME type against file signatures, hashes the bytes, writes to private tenant-prefixed Storage paths, and calls an idempotent database function that links the media to a scan session and appends an audit event. Browser preview is presentation-only because it cannot provide the native durable-filesystem guarantee.
 
-Stage 3 captures are evidence, not findings or decisions. They do not approve repairs, establish OEM compliance, certify repair quality, or determine vehicle safety. AI supplement analysis remains a later phase.
+Stage 3 captures are evidence, not findings or decisions. They do not approve repairs, establish OEM compliance, certify repair quality, or determine vehicle safety.
+
+## Sealed Phase 4 supplement analysis
+
+The Stage 4 control plane fails closed unless the repair order has a human-verified estimate, photo evidence, an organization-approved provider policy, and an evaluated active model version. Provider training must be disabled and the policy must explicitly permit both estimate data and repair evidence for supplement analysis.
+
+Vision observations require evidence IDs, confidence, source quality, a reason, limitations, and `human_review_required=true`. Deterministic comparison marks only exact description matches—or an exact operation-code plus description match—as already present. Generic codes such as `R&I` never suppress a candidate by themselves. Clear coat is always classified as an automatic-operation exclusion and cannot become a supplement candidate.
+
+Candidate records and human evaluation events are tenant-scoped. Browser clients cannot fabricate AI output; human evaluation inserts pass through RLS and database triggers that derive the tenant, actor, source result, supersession chain, and audit event. A permitted reviewer can confirm, dismiss, defer, escalate, or request more evidence through a narrow audited command. Confirmation creates an estimator-review candidate only; it does not alter the verified estimate or submit anything externally.
+
+The API retrieves privacy-eligible originals from private Storage with a server-only Supabase secret and sends bounded image inputs to the approved OpenAI Responses API model with response storage disabled. Structured output is schema-validated, evidence IDs must belong to the job, and all observations pass through deterministic estimate comparison before persistence. Browser clients receive no provider or Supabase secret. Jobs are idempotent and record only safe failure codes; raw evidence and provider error bodies are not logged.
 
 ## Scale
 

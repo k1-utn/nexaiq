@@ -21,6 +21,12 @@ class Settings(BaseSettings):
     max_capture_voice_bytes: int = 20 * 1024 * 1024
     supabase_url: str | None = Field(default=None, alias="SUPABASE_URL")
     supabase_publishable_key: str | None = Field(default=None, alias="SUPABASE_PUBLISHABLE_KEY")
+    supabase_secret_key: str | None = Field(default=None, alias="SUPABASE_SECRET_KEY")
+    openai_api_key: str | None = Field(default=None, alias="OPENAI_API_KEY")
+    openai_base_url: str = Field(default="https://api.openai.com/v1", alias="OPENAI_BASE_URL")
+    ai_request_timeout_seconds: int = 120
+    max_analysis_photos: int = 8
+    max_analysis_photo_bytes: int = 24 * 1024 * 1024
 
     @property
     def allowed_origins(self) -> list[str]:
