@@ -126,6 +126,13 @@ class PersistedConnectorFile:
     already_persisted: bool
 
 
+@dataclass(frozen=True)
+class FinalizedConnectorBatch:
+    import_status: str
+    repair_order_id: UUID | None
+    estimate_version_id: UUID | None
+
+
 class SupabaseGateway:
     def __init__(self) -> None:
         self.url = settings.supabase_url
@@ -194,6 +201,8 @@ class SupabaseGateway:
         connector_version: str,
         discovered_at: datetime,
         connector_file: ValidatedConnectorFile,
+        parse_status: str,
+        extracted_payload: dict[str, object],
     ) -> PersistedConnectorFile:
         if context.actor_id is None:
             raise HTTPException(status_code=401, detail="Authenticated user identity required")
@@ -205,8 +214,7 @@ class SupabaseGateway:
             f"{client_file_id}/{safe_name}"
         )
         object_url = (
-            f"{self.url}/storage/v1/object/connector-imports/"
-            f"{quote(object_path, safe='/')}"
+            f"{self.url}/storage/v1/object/connector-imports/{quote(object_path, safe='/')}"
         )
         headers = self._server_headers()
         async with httpx.AsyncClient(timeout=45) as client:
@@ -241,6 +249,8 @@ class SupabaseGateway:
                     "p_storage_object_path": object_path,
                     "p_connector_version": connector_version,
                     "p_discovered_at": discovered_at.isoformat(),
+                    "p_parse_status": parse_status,
+                    "p_extracted_payload": extracted_payload,
                 },
             )
             if rpc_response.status_code not in {200, 201}:
@@ -257,6 +267,38 @@ class SupabaseGateway:
             connector_sync_batch_id=UUID(row["connector_sync_batch_id"]),
             connector_sync_file_id=UUID(row["connector_sync_file_id"]),
             already_persisted=bool(row["already_persisted"]),
+        )
+
+    async def finalize_connector_batch(
+        self,
+        *,
+        context: RequestContext,
+        connector_sync_batch_id: UUID,
+    ) -> FinalizedConnectorBatch:
+        if context.actor_id is None:
+            raise HTTPException(status_code=401, detail="Authenticated user identity required")
+        async with httpx.AsyncClient(timeout=30) as client:
+            response = await client.post(
+                f"{self.url}/rest/v1/rpc/finalize_connector_ems_batch",
+                headers=self._server_headers(content_type=True),
+                json={
+                    "p_actor_id": str(context.actor_id),
+                    "p_organization_id": str(context.organization_id),
+                    "p_connector_sync_batch_id": str(connector_sync_batch_id),
+                },
+            )
+        if response.status_code not in {200, 201}:
+            raise HTTPException(status_code=409, detail="EMS batch import failed")
+        payload = response.json()
+        row = payload[0] if isinstance(payload, list) and payload else payload
+        if not isinstance(row, dict):
+            raise HTTPException(status_code=502, detail="EMS import response was invalid")
+        return FinalizedConnectorBatch(
+            import_status=str(row["import_status"]),
+            repair_order_id=(UUID(row["repair_order_id"]) if row.get("repair_order_id") else None),
+            estimate_version_id=(
+                UUID(row["estimate_version_id"]) if row.get("estimate_version_id") else None
+            ),
         )
 
     async def persist_estimate(

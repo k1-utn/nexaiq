@@ -37,4 +37,7 @@ class ConnectorFileSyncResult(BaseModel):
     client_file_id: UUID
     provenance: ConnectorFileProvenance
     persistence_status: Literal["persisted", "already_persisted"]
-    parse_status: Literal["awaiting_format_validation"] = "awaiting_format_validation"
+    parse_status: Literal["parsed", "withheld_by_minimization", "unsupported"]
+    import_status: Literal["waiting_for_core_files", "imported", "already_imported"]
+    repair_order_id: UUID | None = None
+    estimate_version_id: UUID | None = None

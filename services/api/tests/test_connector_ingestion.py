@@ -95,6 +95,17 @@ class FakeConnectorClient:
                 200,
                 [{"connector_device_id": "00000000-0000-0000-0000-000000000030"}],
             )
+        if url.endswith("/finalize_connector_ems_batch"):
+            return FakeResponse(
+                200,
+                [
+                    {
+                        "import_status": "waiting_for_core_files",
+                        "repair_order_id": None,
+                        "estimate_version_id": None,
+                    }
+                ],
+            )
         type(self).file_payloads.append(payload)
         return FakeResponse(
             200,
@@ -158,6 +169,8 @@ def test_connector_registration_and_file_sync_keep_secret_server_side(
             connector_version="0.1.0",
             discovered_at=discovered_at,
             connector_file=connector_file,
+            parse_status="withheld_by_minimization",
+            extracted_payload={"table": "ad1", "reason": "privacy_minimization"},
         )
 
     asyncio.run(run_sync())
@@ -167,6 +180,8 @@ def test_connector_registration_and_file_sync_keep_secret_server_side(
     assert len(FakeConnectorClient.file_payloads) == 1
     payload = FakeConnectorClient.file_payloads[0]
     assert payload["p_client_file_id"] == str(file_id)
+    assert payload["p_parse_status"] == "withheld_by_minimization"
+    assert payload["p_extracted_payload"]["table"] == "ad1"
     assert payload["p_storage_object_path"].startswith(
         f"{context.organization_id}/{device_identifier}/{batch_id}/{file_id}/"
     )

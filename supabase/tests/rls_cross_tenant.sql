@@ -129,7 +129,7 @@ insert into public.connector_sync_batches (
 insert into public.connector_sync_files (
   id, organization_id, connector_sync_batch_id, client_file_id,
   source_filename, file_extension, mime_type, byte_size,
-  content_sha256, storage_object_path
+  content_sha256, storage_object_path, parse_status, extracted_payload
 ) values (
   'b7500000-0000-4000-8000-000000000002',
   'b0000000-0000-4000-8000-000000000002',
@@ -137,7 +137,9 @@ insert into public.connector_sync_files (
   'b7600000-0000-4000-8000-000000000002',
   'tenant-b.ad1', '.ad1', 'application/octet-stream', 16,
   repeat('c', 64),
-  'b0000000-0000-4000-8000-000000000002/b7200000-0000-4000-8000-000000000002/b7400000-0000-4000-8000-000000000002/b7600000-0000-4000-8000-000000000002/tenant-b.ad1'
+  'b0000000-0000-4000-8000-000000000002/b7200000-0000-4000-8000-000000000002/b7400000-0000-4000-8000-000000000002/b7600000-0000-4000-8000-000000000002/tenant-b.ad1',
+  'withheld_by_minimization',
+  jsonb_build_object('table', 'ad1', 'reason', 'privacy_minimization')
 );
 
 set local role anon;
@@ -641,6 +643,10 @@ declare
   connector_batch_id uuid;
   connector_file_id uuid;
   connector_duplicate boolean;
+  connector_import_status text;
+  connector_repair_order_id uuid;
+  connector_estimate_version_id uuid;
+  connector_line_count integer;
 begin
   select registered.connector_device_id, registered.device_status
     into connector_device_id, connector_device_status
@@ -682,7 +688,8 @@ begin
       'tenant-a.ad1', '.ad1', 'application/octet-stream', 16,
       repeat('d', 64),
       'a0000000-0000-4000-8000-000000000001/a7200000-0000-4000-8000-000000000001/a7400000-0000-4000-8000-000000000001/a7600000-0000-4000-8000-000000000001/tenant-a.ad1',
-      '0.1.0', clock_timestamp()
+      '0.1.0', clock_timestamp(), 'withheld_by_minimization',
+      jsonb_build_object('table', 'ad1', 'reason', 'privacy_minimization')
     ) persisted;
 
   if connector_duplicate
@@ -697,7 +704,8 @@ begin
        select 1 from public.connector_sync_files file
        where file.id = connector_file_id
          and file.content_sha256 = repeat('d', 64)
-         and file.parse_status = 'awaiting_format_validation'
+         and file.parse_status = 'withheld_by_minimization'
+         and file.extracted_payload ->> 'table' = 'ad1'
      )
      or not exists (
        select 1 from public.audit_events event
@@ -719,11 +727,127 @@ begin
       'tenant-a.ad1', '.ad1', 'application/octet-stream', 16,
       repeat('d', 64),
       'a0000000-0000-4000-8000-000000000001/a7200000-0000-4000-8000-000000000001/a7400000-0000-4000-8000-000000000001/a7600000-0000-4000-8000-000000000001/tenant-a.ad1',
-      '0.1.0', clock_timestamp()
+      '0.1.0', clock_timestamp(), 'withheld_by_minimization',
+      jsonb_build_object('table', 'ad1', 'reason', 'privacy_minimization')
     ) persisted;
   if not connector_duplicate then
     raise exception 'Stage 6 EMS file retry created a duplicate record';
   end if;
+
+  perform public.persist_connector_sync_file(
+    '10000000-0000-4000-8000-000000000001',
+    'a0000000-0000-4000-8000-000000000001',
+    'a1000000-0000-4000-8000-000000000001',
+    'a7200000-0000-4000-8000-000000000001',
+    'a7400000-0000-4000-8000-000000000001',
+    'a7600000-0000-4000-8000-000000000002',
+    'tenant-a.env', '.env', 'application/octet-stream', 32,
+    repeat('e', 64),
+    'a0000000-0000-4000-8000-000000000001/a7200000-0000-4000-8000-000000000001/a7400000-0000-4000-8000-000000000001/a7600000-0000-4000-8000-000000000002/tenant-a.env',
+    '0.1.0', clock_timestamp(), 'parsed',
+    jsonb_build_object(
+      'table', 'env', 'repair_order_reference', 'EMS-900',
+      'estimate_file_reference', 'EMS-FILE-900'
+    )
+  );
+  perform public.persist_connector_sync_file(
+    '10000000-0000-4000-8000-000000000001',
+    'a0000000-0000-4000-8000-000000000001',
+    'a1000000-0000-4000-8000-000000000001',
+    'a7200000-0000-4000-8000-000000000001',
+    'a7400000-0000-4000-8000-000000000001',
+    'a7600000-0000-4000-8000-000000000003',
+    'tenant-a.veh', '.veh', 'application/octet-stream', 32,
+    repeat('f', 64),
+    'a0000000-0000-4000-8000-000000000001/a7200000-0000-4000-8000-000000000001/a7400000-0000-4000-8000-000000000001/a7600000-0000-4000-8000-000000000003/tenant-a.veh',
+    '0.1.0', clock_timestamp(), 'parsed',
+    jsonb_build_object(
+      'table', 'veh', 'vin', 'EMSVIN00000000001', 'year', 2025,
+      'make', 'Toyota', 'model', 'RAV4', 'trim', 'XLE'
+    )
+  );
+  perform public.persist_connector_sync_file(
+    '10000000-0000-4000-8000-000000000001',
+    'a0000000-0000-4000-8000-000000000001',
+    'a1000000-0000-4000-8000-000000000001',
+    'a7200000-0000-4000-8000-000000000001',
+    'a7400000-0000-4000-8000-000000000001',
+    'a7600000-0000-4000-8000-000000000004',
+    'tenant-a.lin', '.lin', 'application/octet-stream', 64,
+    repeat('1', 64),
+    'a0000000-0000-4000-8000-000000000001/a7200000-0000-4000-8000-000000000001/a7400000-0000-4000-8000-000000000001/a7600000-0000-4000-8000-000000000004/tenant-a.lin',
+    '0.1.0', clock_timestamp(), 'parsed',
+    jsonb_build_object(
+      'table', 'lin',
+      'lines', jsonb_build_array(
+        jsonb_build_object(
+          'source_line_number', 1, 'operation_code', 'RPL',
+          'description', 'Replace bumper cover', 'amount', '125.50',
+          'normalized_source_text', '1 | RPL | Replace bumper cover | 125.50'
+        ),
+        jsonb_build_object(
+          'source_line_number', 2, 'operation_code', 'R&I',
+          'description', 'Remove and install lamp', 'amount', null,
+          'normalized_source_text', '2 | R&I | Remove and install lamp'
+        )
+      )
+    )
+  );
+
+  select imported.import_status, imported.repair_order_id,
+         imported.estimate_version_id, imported.imported_line_count
+    into connector_import_status, connector_repair_order_id,
+         connector_estimate_version_id, connector_line_count
+    from public.finalize_connector_ems_batch(
+      '10000000-0000-4000-8000-000000000001',
+      'a0000000-0000-4000-8000-000000000001',
+      connector_batch_id
+    ) imported;
+
+  if connector_import_status <> 'imported'
+     or connector_line_count <> 2
+     or not exists (
+       select 1 from public.repair_orders repair_order
+       where repair_order.id = connector_repair_order_id
+         and repair_order.organization_id = 'a0000000-0000-4000-8000-000000000001'
+         and repair_order.ro_number = 'EMS-900'
+     )
+     or not exists (
+       select 1 from public.estimate_versions estimate
+       where estimate.id = connector_estimate_version_id
+         and estimate.organization_id = 'a0000000-0000-4000-8000-000000000001'
+         and estimate.parse_status = 'requires_human_verification'
+         and estimate.parser_name = 'nexaiq_ems_dbf'
+     )
+     or not exists (
+       select 1 from public.audit_events event
+       where event.entity_id = connector_estimate_version_id
+         and event.event_type = 'connector_ems_estimate_imported'
+     ) then
+    raise exception 'Stage 6 EMS parsing/import did not create review-required records';
+  end if;
+
+  select imported.import_status
+    into connector_import_status
+    from public.finalize_connector_ems_batch(
+      '10000000-0000-4000-8000-000000000001',
+      'a0000000-0000-4000-8000-000000000001',
+      connector_batch_id
+    ) imported;
+  if connector_import_status <> 'already_imported' then
+    raise exception 'Stage 6 EMS batch finalization was not idempotent';
+  end if;
+
+  begin
+    perform public.finalize_connector_ems_batch(
+      '10000000-0000-4000-8000-000000000001',
+      'b0000000-0000-4000-8000-000000000002',
+      'b7300000-0000-4000-8000-000000000002'
+    );
+    raise exception 'tenant A finalized a tenant B connector batch';
+  exception
+    when insufficient_privilege then null;
+  end;
 
   begin
     perform public.register_connector_device(

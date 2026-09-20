@@ -10,7 +10,8 @@ Stage 6 provides an authorized, human-configured Windows path from Mitchell EMS 
 4. A Windows tray process scans the authorized folder and waits for files to become stable.
 5. A durable local queue records file and batch identities before upload and retries failures with bounded exponential backoff.
 6. FastAPI validates filename, extension, MIME type, size, and blocked executable/archive signatures, then writes the unmodified source to the private `connector-imports` bucket.
-7. Service-only database functions persist idempotent tenant-scoped device, batch, and file records and append audit events.
+7. The API parses only the approved dBASE tables and withholds sensitive side tables from extraction.
+8. Service-only database functions persist idempotent tenant-scoped records, create review-required estimate versions, and append audit events.
 
 ## Security boundary
 
@@ -21,6 +22,8 @@ Stage 6 provides an authorized, human-configured Windows path from Mitchell EMS 
 - Storage paths include organization, device, client batch, and client file identifiers.
 - Retries reuse stable identifiers; reused identifiers with different content are rejected.
 
-## Required real sample
+## Parser and import boundary
 
-EMS parsing and repair-order matching are not implemented from assumptions. The next Stage 6 increment requires one authorized Mitchell EMS export with all generated files kept together. The sample should use a test repair order or be de-identified before development use. Fixture-backed parsing, version handling, and update detection will be built from that sample.
+The parser was built from an authorized Mitchell EMS export and backed by synthetic dBASE fixtures. It imports only ENV estimate metadata, VEH vehicle data, LIN estimate lines, and TTL totals. AD1, AD2, VEN, and DBT data are never extracted because those tables can contain customer, insurer, vendor, address, email, claim, or memo content. Profile tables remain unsupported because they are not required for the initial estimate import.
+
+Once ENV, VEH, and LIN are present in one connector batch, the service idempotently creates or matches the repair order, creates a new estimate version, and imports its lines. Every imported version is marked `requires_human_verification`; no estimate is approved, submitted, or written back automatically.

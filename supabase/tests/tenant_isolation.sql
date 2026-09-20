@@ -180,7 +180,12 @@ begin
      )
      or has_function_privilege(
        'authenticated',
-       'public.persist_connector_sync_file(uuid,uuid,uuid,uuid,uuid,uuid,text,text,text,bigint,text,text,text,timestamptz)',
+       'public.persist_connector_sync_file(uuid,uuid,uuid,uuid,uuid,uuid,text,text,text,bigint,text,text,text,timestamptz,text,jsonb)',
+       'EXECUTE'
+     )
+     or has_function_privilege(
+       'authenticated',
+       'public.finalize_connector_ems_batch(uuid,uuid,uuid)',
        'EXECUTE'
      ) then
     raise exception 'browser roles can execute service-only Stage 6 connector functions';
@@ -193,7 +198,12 @@ begin
      )
      or not has_function_privilege(
        'service_role',
-       'public.persist_connector_sync_file(uuid,uuid,uuid,uuid,uuid,uuid,text,text,text,bigint,text,text,text,timestamptz)',
+       'public.persist_connector_sync_file(uuid,uuid,uuid,uuid,uuid,uuid,text,text,text,bigint,text,text,text,timestamptz,text,jsonb)',
+       'EXECUTE'
+     )
+     or not has_function_privilege(
+       'service_role',
+       'public.finalize_connector_ems_batch(uuid,uuid,uuid)',
        'EXECUTE'
      ) then
     raise exception 'service role cannot execute the controlled Stage 6 connector workflow';

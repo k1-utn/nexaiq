@@ -12,6 +12,7 @@ from app.domain.connectors import (
     ConnectorFileSyncResult,
 )
 from app.services.connector_validator import read_validated_connector_file
+from app.services.ems_dbf_parser import parse_ems_dbf
 from app.services.supabase_gateway import SupabaseGateway
 
 router = APIRouter(tags=["Windows EMS connector"])
@@ -44,7 +45,9 @@ async def upload_ems_file(
     context: Annotated[RequestContext, Depends(require_request_context)],
 ) -> ConnectorFileSyncResult:
     validated = await read_validated_connector_file(file)
-    persisted = await SupabaseGateway().persist_connector_file(
+    parsed = parse_ems_dbf(validated.source_filename, validated.data)
+    gateway = SupabaseGateway()
+    persisted = await gateway.persist_connector_file(
         context=context,
         location_id=location_id,
         device_identifier=device_identifier,
@@ -53,6 +56,12 @@ async def upload_ems_file(
         connector_version=connector_version,
         discovered_at=discovered_at,
         connector_file=validated,
+        parse_status=parsed.parse_status,
+        extracted_payload=parsed.payload,
+    )
+    imported = await gateway.finalize_connector_batch(
+        context=context,
+        connector_sync_batch_id=persisted.connector_sync_batch_id,
     )
     return ConnectorFileSyncResult(
         organization_id=context.organization_id,
@@ -70,7 +79,9 @@ async def upload_ems_file(
             content_sha256=validated.content_sha256,
             discovered_at=discovered_at,
         ),
-        persistence_status=(
-            "already_persisted" if persisted.already_persisted else "persisted"
-        ),
+        persistence_status=("already_persisted" if persisted.already_persisted else "persisted"),
+        parse_status=parsed.parse_status,
+        import_status=imported.import_status,
+        repair_order_id=imported.repair_order_id,
+        estimate_version_id=imported.estimate_version_id,
     )
