@@ -121,6 +121,13 @@ def _text(record: dict[str, object | None], key: str) -> str | None:
     return str(value).strip() if value is not None and str(value).strip() else None
 
 
+def _reference(record: dict[str, object | None], key: str) -> str | None:
+    value = _text(record, key)
+    if value is None or set(value) == {"0"}:
+        return None
+    return value
+
+
 def _money(record: dict[str, object | None], *keys: str) -> str | None:
     for key in keys:
         value = record.get(key)
@@ -165,8 +172,8 @@ def parse_ems_dbf(filename: str, data: bytes) -> ParsedEmsFile:
                 "software_version": _text(record, "SW_VERSION"),
                 "database_version": _text(record, "DB_VERSION"),
                 "unique_file_id": _text(record, "UNQFILE_ID"),
-                "repair_order_reference": _text(record, "RO_ID"),
-                "estimate_file_reference": _text(record, "ESTFILE_ID"),
+                "repair_order_reference": _reference(record, "RO_ID"),
+                "estimate_file_reference": _reference(record, "ESTFILE_ID"),
                 "supplement_number": _text(record, "SUPP_NO"),
                 "transaction_type": _text(record, "TRANS_TYPE"),
                 "ems_version": _text(record, "EMS_VER"),

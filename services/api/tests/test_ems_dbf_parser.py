@@ -131,6 +131,18 @@ def test_sensitive_tables_are_not_read_or_extracted() -> None:
     assert result.payload["reason"] == "customer_insurer_vendor_and_memo_fields_not_extracted"
 
 
+def test_zero_repair_order_reference_falls_back_to_estimate_reference() -> None:
+    env = build_dbf(
+        [("RO_ID", "C", 8, 0), ("ESTFILE_ID", "C", 20, 0)],
+        [{"RO_ID": "000000", "ESTFILE_ID": "19205358"}],
+    )
+
+    payload = parse_ems_dbf("test.ENV", env).payload
+
+    assert payload["repair_order_reference"] is None
+    assert payload["estimate_file_reference"] == "19205358"
+
+
 def test_rejects_truncated_or_spoofed_dbf() -> None:
     with pytest.raises(HTTPException) as exc_info:
         parse_ems_dbf("test.LIN", b"not-a-dbf")
