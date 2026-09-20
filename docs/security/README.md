@@ -22,6 +22,6 @@
 4. Run dependency, secret, static-analysis, and tenant-isolation checks in CI.
 5. Establish managed backup/restore testing and incident contacts.
 6. Run an independent penetration test before enterprise rollout.
-7. Enable Supabase leaked-password protection on a supported plan before external pilot access. It is intentionally recorded as unavailable in the current hosted development project, not treated as an active control.
+7. Enable Supabase leaked-password protection on a supported plan before external pilot access. It is intentionally recorded as unavailable in the current free hosted development project, not treated as an active control. Development configuration still requires passwords of at least 12 characters with lowercase, uppercase, digits, and symbols; that complexity rule is a compensating safeguard, not a breached-password check.
 
 See `docs/incident-response` and `LEGAL_REVIEW_REQUIRED.md`.

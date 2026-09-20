@@ -24,6 +24,7 @@ class Settings(BaseSettings):
     supabase_secret_key: str | None = Field(default=None, alias="SUPABASE_SECRET_KEY")
     openai_api_key: str | None = Field(default=None, alias="OPENAI_API_KEY")
     openai_base_url: str = Field(default="https://api.openai.com/v1", alias="OPENAI_BASE_URL")
+    paid_ai_enabled: bool = Field(default=False, alias="NEXAIQ_PAID_AI_ENABLED")
     ai_request_timeout_seconds: int = 120
     max_analysis_photos: int = 8
     max_analysis_photo_bytes: int = 24 * 1024 * 1024

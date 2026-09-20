@@ -108,6 +108,8 @@ class OpenAIVisionProvider:
         analysis_context: SupplementAnalysisContext,
         evidence: list[DownloadedEvidence],
     ) -> ProviderAnalysis:
+        if not settings.paid_ai_enabled:
+            raise VisionProviderError("Paid AI requests are disabled")
         if not settings.openai_api_key:
             raise VisionProviderError("OpenAI credential is not configured")
         if not evidence:

@@ -55,6 +55,20 @@ insert into public.findings (
     'Photo and estimate comparison require estimator review.',
     'R&I rear bumper cover', 'test-b-rear-bumper'
   );
+insert into public.supplement_candidates (
+  id, organization_id, repair_order_id, finding_id, proposed_operation,
+  reason, status, confirmed_by, confirmed_at
+) values (
+  'b4600000-0000-4000-8000-000000000002',
+  'b0000000-0000-4000-8000-000000000002',
+  'b4000000-0000-4000-8000-000000000002',
+  'b4500000-0000-4000-8000-000000000002',
+  'R&I rear bumper cover',
+  'Photo and estimate comparison require estimator review.',
+  'estimator_review',
+  '20000000-0000-4000-8000-000000000002',
+  clock_timestamp()
+);
 insert into storage.objects (id, bucket_id, name, owner_id) values
   ('a5000000-0000-4000-8000-000000000001','repair-evidence','a0000000-0000-4000-8000-000000000001/a4000000-0000-4000-8000-000000000001/a5000000-0000-4000-8000-000000000001/a.pdf','10000000-0000-4000-8000-000000000001'),
   ('b5000000-0000-4000-8000-000000000002','repair-evidence','b0000000-0000-4000-8000-000000000002/b4000000-0000-4000-8000-000000000002/b5000000-0000-4000-8000-000000000002/b.pdf','20000000-0000-4000-8000-000000000002');
@@ -156,6 +170,8 @@ declare
   duplicate_scan_media_id uuid;
   duplicate_scan_link_id uuid;
   duplicate_capture boolean;
+  stage5_candidate_id uuid;
+  stage5_review_event_id uuid;
 begin
   select array_agg(ro_number order by ro_number)
     into visible_repairs
@@ -202,6 +218,58 @@ begin
   ) then
     raise exception 'finding review evaluation event was not attributed';
   end if;
+
+  select candidate.id
+    into stage5_candidate_id
+    from public.supplement_candidates candidate
+    where candidate.finding_id = 'a4500000-0000-4000-8000-000000000001';
+
+  insert into public.supplement_candidate_review_events (
+    supplement_candidate_id, decision, review_reason,
+    oem_consideration_status
+  ) values (
+    stage5_candidate_id, 'ready_for_package',
+    'Estimator verified the operation and linked evidence.',
+    'not_applicable'
+  ) returning id into stage5_review_event_id;
+
+  if not exists (
+    select 1
+    from public.supplement_candidate_review_events event
+    where event.id = stage5_review_event_id
+      and event.organization_id = 'a0000000-0000-4000-8000-000000000001'
+      and event.repair_order_id = 'a4000000-0000-4000-8000-000000000001'
+      and event.actor_id = '10000000-0000-4000-8000-000000000001'
+      and event.decision = 'ready_for_package'
+  ) or not exists (
+    select 1
+    from public.supplement_candidates candidate
+    where candidate.id = stage5_candidate_id
+      and candidate.status = 'confirmed'
+      and candidate.oem_consideration_status = 'not_applicable'
+      and candidate.reviewed_by = '10000000-0000-4000-8000-000000000001'
+  ) or not exists (
+    select 1
+    from public.audit_events event
+    where event.entity_id = stage5_candidate_id
+      and event.event_type = 'supplement_candidate_review_recorded'
+      and event.actor_id = '10000000-0000-4000-8000-000000000001'
+  ) then
+    raise exception 'Stage 5 candidate review was not derived and audited correctly';
+  end if;
+
+  begin
+    insert into public.supplement_candidate_review_events (
+      supplement_candidate_id, decision, review_reason,
+      oem_consideration_status
+    ) values (
+      'b4600000-0000-4000-8000-000000000002',
+      'ready_for_package', 'Cross-tenant attempt.', 'not_applicable'
+    );
+    raise exception 'tenant A reviewed a tenant B supplement candidate';
+  exception
+    when insufficient_privilege then null;
+  end;
 
   insert into public.repair_orders (
     organization_id, location_id, vehicle_id, ro_number
@@ -499,7 +567,84 @@ declare
   job_id uuid;
   result_id uuid;
   finding_count integer;
+  review_package_id uuid;
+  review_package_number integer;
+  review_package_item_count integer;
+  review_package_status text;
+  package_decision_time timestamptz;
 begin
+  select package.package_id, package.package_number,
+         package.item_count, package.package_status
+    into review_package_id, review_package_number,
+         review_package_item_count, review_package_status
+    from public.create_supplement_review_package(
+      '10000000-0000-4000-8000-000000000001',
+      'a0000000-0000-4000-8000-000000000001',
+      'a4000000-0000-4000-8000-000000000001'
+    ) package;
+
+  if review_package_number <> 1
+     or review_package_item_count <> 1
+     or review_package_status <> 'draft'
+     or not exists (
+       select 1
+       from public.supplement_review_package_items item
+       where item.package_id = review_package_id
+         and item.organization_id = 'a0000000-0000-4000-8000-000000000001'
+         and item.supplement_candidate_id in (
+           select candidate.id
+           from public.supplement_candidates candidate
+           where candidate.finding_id = 'a4500000-0000-4000-8000-000000000001'
+         )
+         and item.oem_consideration_status = 'not_applicable'
+     ) then
+    raise exception 'Stage 5 package snapshot was not created correctly';
+  end if;
+
+  select decision.package_status, decision.decided_at
+    into review_package_status, package_decision_time
+    from public.record_supplement_review_package_decision(
+      '10000000-0000-4000-8000-000000000001',
+      'a0000000-0000-4000-8000-000000000001',
+      review_package_id,
+      'approved',
+      null,
+      'I confirm that I reviewed this supplement package and its linked evidence. This is an estimator decision and does not certify repair safety or insurer payment.'
+    ) decision;
+
+  if review_package_status <> 'approved'
+     or package_decision_time is null
+     or not exists (
+       select 1
+       from public.supplement_review_packages package
+       where package.id = review_package_id
+         and package.status = 'approved'
+         and package.approved_by = '10000000-0000-4000-8000-000000000001'
+         and package.approved_at is not null
+     )
+     or (
+       select count(*)
+       from public.audit_events event
+       where event.entity_id = review_package_id
+         and event.event_type in (
+           'supplement_review_package_created',
+           'supplement_review_package_approved'
+         )
+     ) <> 2 then
+    raise exception 'Stage 5 package approval or audit history is incomplete';
+  end if;
+
+  begin
+    perform public.create_supplement_review_package(
+      '10000000-0000-4000-8000-000000000001',
+      'b0000000-0000-4000-8000-000000000002',
+      'b4000000-0000-4000-8000-000000000002'
+    );
+    raise exception 'tenant A created a Stage 5 package for tenant B';
+  exception
+    when insufficient_privilege then null;
+  end;
+
   select id into provider_id
     from public.ai_providers
     where provider_key = 'openai';

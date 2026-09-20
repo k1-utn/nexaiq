@@ -36,3 +36,12 @@ button, input { font: inherit; }
     linear-gradient(90deg, rgba(255,255,255,.018) 1px, transparent 1px);
   background-size: 28px 28px;
 }
+
+@media print {
+  @page { margin: 14mm; }
+  html { background: white; color-scheme: light; }
+  body { background: white; color: #0f172a; }
+  .no-print { display: none !important; }
+  .report-surface { background: white !important; padding: 0 !important; }
+  .break-inside-avoid { break-inside: avoid; }
+}

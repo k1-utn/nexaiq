@@ -95,6 +95,21 @@ class CompletedSupplementAnalysis:
     created_finding_count: int
 
 
+@dataclass(frozen=True)
+class CreatedSupplementReviewPackage:
+    package_id: UUID
+    package_number: int
+    item_count: int
+    package_status: str
+
+
+@dataclass(frozen=True)
+class RecordedSupplementReviewPackageDecision:
+    package_id: UUID
+    package_status: str
+    decided_at: str
+
+
 class SupabaseGateway:
     def __init__(self) -> None:
         self.url = settings.supabase_url
@@ -445,3 +460,79 @@ class SupabaseGateway:
                     "p_failure_code": failure_code[:100],
                 },
             )
+
+    async def create_supplement_review_package(
+        self,
+        *,
+        context: RequestContext,
+        repair_order_id: UUID,
+    ) -> CreatedSupplementReviewPackage:
+        if context.actor_id is None:
+            raise HTTPException(status_code=401, detail="Authenticated user identity required")
+        async with httpx.AsyncClient(timeout=20) as client:
+            response = await client.post(
+                f"{self.url}/rest/v1/rpc/create_supplement_review_package",
+                headers=self._server_headers(content_type=True),
+                json={
+                    "p_actor_id": str(context.actor_id),
+                    "p_organization_id": str(context.organization_id),
+                    "p_repair_order_id": str(repair_order_id),
+                },
+            )
+        if response.status_code not in {200, 201}:
+            raise HTTPException(
+                status_code=409,
+                detail=(
+                    "The review package could not be created. "
+                    "Confirm at least one candidate is ready."
+                ),
+            )
+        payload = response.json()
+        row = payload[0] if isinstance(payload, list) and payload else payload
+        if not isinstance(row, dict):
+            raise HTTPException(status_code=502, detail="Review package response was invalid")
+        return CreatedSupplementReviewPackage(
+            package_id=UUID(row["package_id"]),
+            package_number=int(row["package_number"]),
+            item_count=int(row["item_count"]),
+            package_status=str(row["package_status"]),
+        )
+
+    async def record_supplement_review_package_decision(
+        self,
+        *,
+        context: RequestContext,
+        package_id: UUID,
+        decision: str,
+        note: str | None,
+        attestation: str | None,
+    ) -> RecordedSupplementReviewPackageDecision:
+        if context.actor_id is None:
+            raise HTTPException(status_code=401, detail="Authenticated user identity required")
+        async with httpx.AsyncClient(timeout=20) as client:
+            response = await client.post(
+                f"{self.url}/rest/v1/rpc/record_supplement_review_package_decision",
+                headers=self._server_headers(content_type=True),
+                json={
+                    "p_actor_id": str(context.actor_id),
+                    "p_organization_id": str(context.organization_id),
+                    "p_package_id": str(package_id),
+                    "p_decision": decision,
+                    "p_note": note,
+                    "p_attestation": attestation,
+                },
+            )
+        if response.status_code not in {200, 201}:
+            raise HTTPException(
+                status_code=409,
+                detail="The package decision could not be recorded. Refresh and retry.",
+            )
+        payload = response.json()
+        row = payload[0] if isinstance(payload, list) and payload else payload
+        if not isinstance(row, dict):
+            raise HTTPException(status_code=502, detail="Package decision response was invalid")
+        return RecordedSupplementReviewPackageDecision(
+            package_id=UUID(row["package_id"]),
+            package_status=str(row["package_status"]),
+            decided_at=str(row["decided_at"]),
+        )

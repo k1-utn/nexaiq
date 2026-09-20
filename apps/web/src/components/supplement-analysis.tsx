@@ -59,6 +59,7 @@ const blockerLabels: Record<string, string> = {
   evaluated_model_required: "Activate an evaluated model configuration.",
   server_secret_required: "Add the server-only Supabase secret key to the API.",
   provider_credential_required: "Add the server-only OpenAI API key to the API.",
+  paid_ai_disabled: "Paid AI analysis is switched off. The rest of nexaIQ remains available.",
 };
 
 const statusTone = (status: string): "green" | "amber" | "rose" | "slate" => {
@@ -218,6 +219,7 @@ export function SupplementAnalysis({
             {running ? <LoaderCircle className="size-4 animate-spin" /> : <ScanSearch className="size-4" />}
             {running ? "Analyzing private evidence…" : "Run candidate analysis"}
           </Button>
+          <Button asChild size="lg" variant="secondary"><Link href={`/repair-orders/${repairOrder.id}/supplement-review`}><ShieldCheck className="size-4" />Open supplement review</Link></Button>
         </section>
 
         <Card className={readiness?.ready ? "border-emerald-300/20" : "border-amber-300/20"}>

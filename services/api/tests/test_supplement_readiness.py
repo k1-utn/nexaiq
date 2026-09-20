@@ -133,6 +133,7 @@ def test_readiness_route_reports_policy_and_model_blockers(
     monkeypatch.setattr(SupabaseGateway, "get_supplement_analysis_readiness", fake_readiness)
     monkeypatch.setattr(gateway_module.settings, "supabase_secret_key", "test-secret")
     monkeypatch.setattr(gateway_module.settings, "openai_api_key", "test-provider-key")
+    monkeypatch.setattr(gateway_module.settings, "paid_ai_enabled", True)
     app.dependency_overrides[require_request_context] = lambda: context(
         token="test-user-token"  # noqa: S106 - inert test value
     )
@@ -151,3 +152,39 @@ def test_readiness_route_reports_policy_and_model_blockers(
         "evaluated_model_required",
     ]
     assert payload["human_review_required"] is True
+
+
+def test_readiness_reports_paid_ai_disabled(monkeypatch: pytest.MonkeyPatch) -> None:
+    async def fake_readiness(
+        gateway: SupabaseGateway,
+        *,
+        context: RequestContext,
+        repair_order_id: UUID,
+    ) -> SupplementAnalysisReadinessRecord:
+        del gateway, context, repair_order_id
+        return SupplementAnalysisReadinessRecord(
+            verified_estimate_version_id=UUID("00000000-0000-0000-0000-000000000020"),
+            photo_count=4,
+            eligible_photo_count=4,
+            withheld_photo_count=0,
+            voice_note_count=4,
+            approved_provider_policy_count=1,
+            eligible_model_version_count=1,
+        )
+
+    monkeypatch.setattr(SupabaseGateway, "get_supplement_analysis_readiness", fake_readiness)
+    monkeypatch.setattr(gateway_module.settings, "supabase_secret_key", "test-secret")
+    monkeypatch.setattr(gateway_module.settings, "openai_api_key", "test-provider-key")
+    monkeypatch.setattr(gateway_module.settings, "paid_ai_enabled", False)
+    app.dependency_overrides[require_request_context] = lambda: context(
+        token="test-user-token"  # noqa: S106 - inert test value
+    )
+    try:
+        response = TestClient(app).get(
+            "/v1/supplement-analysis/repair-orders/00000000-0000-0000-0000-000000000003/readiness"
+        )
+    finally:
+        app.dependency_overrides.clear()
+
+    assert response.status_code == 200
+    assert response.json()["blockers"] == ["paid_ai_disabled"]

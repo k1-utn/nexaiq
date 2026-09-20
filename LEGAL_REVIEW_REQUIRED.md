@@ -10,6 +10,7 @@ Nothing in this repository is lawyer-approved. Before any external commercial la
 - Cross-border processing and actual residency claims for every host, AI provider, monitoring vendor, payment vendor, subprocessor, backup, and support pathway.
 - Retention periods, litigation/legal holds, deletion/export scope, backup deletion behaviour, and contractual/statutory recordkeeping.
 - Security commitments, breach-notification duties, incident communications, audit-log positioning, and whether any evidence workflow supports stronger evidentiary claims.
+- Authentication policy for pilot and production, including MFA, session lifetime, account recovery, password-reset handling, and leaked-password screening. Supabase leaked-password protection is not enabled in the current free development project and remains a pre-pilot requirement on a supported plan.
 - Customer data ownership, permitted use, de-identification, analytics, model improvement/training, feedback rights, confidentiality, and subprocessor change process.
 - Employee qualification, training, sign-off, performance-adjacent, and privacy controls; ensure no hidden surveillance or unsupported competency inference.
 - OEM and estimating-system licences, subscription terms, uploads, summaries, excerpts, derived data, redistribution, training rights, and proposed provider partnerships.

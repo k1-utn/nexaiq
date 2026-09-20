@@ -83,6 +83,7 @@ def analysis_context() -> SupplementAnalysisContext:
 def test_openai_request_disables_storage_and_uses_strict_structured_output(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    monkeypatch.setattr(provider_module.settings, "paid_ai_enabled", True)
     monkeypatch.setattr(provider_module.settings, "openai_api_key", "test-provider-key")
     monkeypatch.setattr(provider_module.settings, "openai_base_url", "https://api.openai.com/v1")
     monkeypatch.setattr(provider_module.httpx, "AsyncClient", lambda **kwargs: FakeClient())
@@ -115,6 +116,7 @@ def test_openai_request_disables_storage_and_uses_strict_structured_output(
 def test_openai_output_cannot_reference_unprovided_evidence(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    monkeypatch.setattr(provider_module.settings, "paid_ai_enabled", True)
     monkeypatch.setattr(provider_module.settings, "openai_api_key", "test-provider-key")
     monkeypatch.setattr(provider_module.httpx, "AsyncClient", lambda **kwargs: FakeClient())
 
@@ -128,6 +130,28 @@ def test_openai_output_cannot_reference_unprovided_evidence(
                         mime_type="image/jpeg",
                         content_sha256="b" * 64,
                         data=b"different-image",
+                    )
+                ],
+            )
+        )
+
+
+def test_openai_request_is_blocked_when_paid_ai_is_disabled(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(provider_module.settings, "paid_ai_enabled", False)
+    monkeypatch.setattr(provider_module.settings, "openai_api_key", "test-provider-key")
+
+    with pytest.raises(VisionProviderError, match="Paid AI requests are disabled"):
+        asyncio.run(
+            OpenAIVisionProvider().analyze(
+                analysis_context=analysis_context(),
+                evidence=[
+                    DownloadedEvidence(
+                        media_id=EVIDENCE_ID,
+                        mime_type="image/jpeg",
+                        content_sha256="c" * 64,
+                        data=b"safe-image-bytes",
                     )
                 ],
             )

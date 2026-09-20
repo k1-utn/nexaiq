@@ -9,6 +9,9 @@ from app.domain.supplements import (
     ReadinessBlocker,
     SupplementAnalysisReadiness,
     SupplementAnalysisRunResult,
+    SupplementReviewPackageCreateResult,
+    SupplementReviewPackageDecisionRequest,
+    SupplementReviewPackageDecisionResult,
 )
 from app.services.supabase_gateway import SupabaseGateway
 from app.services.supplement_analysis import run_supplement_analysis
@@ -43,6 +46,8 @@ async def get_readiness(
         blockers.append(ReadinessBlocker.SERVER_SECRET_REQUIRED)
     if not settings.openai_api_key:
         blockers.append(ReadinessBlocker.PROVIDER_CREDENTIAL_REQUIRED)
+    if not settings.paid_ai_enabled:
+        blockers.append(ReadinessBlocker.PAID_AI_DISABLED)
 
     return SupplementAnalysisReadiness(
         organization_id=context.organization_id,
@@ -75,4 +80,47 @@ async def create_analysis_run(
         context=context,
         repair_order_id=repair_order_id,
         idempotency_key=idempotency_key or str(uuid4()),
+    )
+
+
+@router.post(
+    "/repair-orders/{repair_order_id}/review-packages",
+    response_model=SupplementReviewPackageCreateResult,
+)
+async def create_review_package(
+    repair_order_id: UUID,
+    context: Annotated[RequestContext, Depends(require_request_context)],
+) -> SupplementReviewPackageCreateResult:
+    package = await SupabaseGateway().create_supplement_review_package(
+        context=context,
+        repair_order_id=repair_order_id,
+    )
+    return SupplementReviewPackageCreateResult(
+        package_id=package.package_id,
+        package_number=package.package_number,
+        item_count=package.item_count,
+        package_status=package.package_status,
+    )
+
+
+@router.post(
+    "/review-packages/{package_id}/decision",
+    response_model=SupplementReviewPackageDecisionResult,
+)
+async def record_review_package_decision(
+    package_id: UUID,
+    request: SupplementReviewPackageDecisionRequest,
+    context: Annotated[RequestContext, Depends(require_request_context)],
+) -> SupplementReviewPackageDecisionResult:
+    result = await SupabaseGateway().record_supplement_review_package_decision(
+        context=context,
+        package_id=package_id,
+        decision=request.decision,
+        note=request.note,
+        attestation=request.attestation,
+    )
+    return SupplementReviewPackageDecisionResult(
+        package_id=result.package_id,
+        package_status=result.package_status,
+        decided_at=result.decided_at,
     )

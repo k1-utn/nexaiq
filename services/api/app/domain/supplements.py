@@ -13,6 +13,7 @@ class ReadinessBlocker(StrEnum):
     PRIVACY_ELIGIBLE_PHOTO_REQUIRED = "privacy_eligible_photo_required"
     SERVER_SECRET_REQUIRED = "server_secret_required"  # noqa: S105 - readiness code
     PROVIDER_CREDENTIAL_REQUIRED = "provider_credential_required"
+    PAID_AI_DISABLED = "paid_ai_disabled"
 
 
 class SupplementAnalysisReadiness(BaseModel):
@@ -115,3 +116,28 @@ class SupplementAnalysisRunResult(BaseModel):
         "Generated records are possible supplement candidates only. They do not modify "
         "the estimate or submit a supplement."
     )
+
+
+class SupplementReviewPackageCreateResult(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    package_id: UUID
+    package_number: int = Field(gt=0)
+    item_count: int = Field(gt=0)
+    package_status: Literal["draft"] = "draft"
+
+
+class SupplementReviewPackageDecisionRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    decision: Literal["approved", "changes_requested"]
+    note: str | None = Field(default=None, max_length=4000)
+    attestation: str | None = Field(default=None, max_length=1000)
+
+
+class SupplementReviewPackageDecisionResult(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    package_id: UUID
+    package_status: Literal["approved", "changes_requested"]
+    decided_at: str
