@@ -16,7 +16,6 @@ import {
   History,
   LayoutDashboard,
   Menu,
-  MoreHorizontal,
   ScanLine,
   Search,
   Settings,
@@ -32,13 +31,6 @@ import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { cn } from "@/lib/utils";
 import { createClient as createBrowserSupabaseClient } from "@/lib/supabase/client";
 
-const demoRepairOrders = [
-  { ro: "18472", vehicle: "2025 Toyota RAV4", estimator: "Sarah J.", estimate: "Supplement 1", status: "Estimator review", tone: "amber", updated: "8 min" },
-  { ro: "18468", vehicle: "2023 Ford F-150", estimator: "Mike R.", estimate: "Original", status: "Evidence requested", tone: "rose", updated: "24 min" },
-  { ro: "18461", vehicle: "2024 Honda CR-V", estimator: "Sarah J.", estimate: "Supplement 2", status: "Documentation complete", tone: "green", updated: "1 hr" },
-  { ro: "18455", vehicle: "2022 Hyundai Tucson", estimator: "Andre L.", estimate: "Original", status: "Estimate verification", tone: "cyan", updated: "2 hr" },
-] as const;
-
 const navigation = [
   ["Overview", LayoutDashboard],
   ["Repair orders", Wrench],
@@ -53,7 +45,30 @@ type EstimateParseResponse = {
   detail?: string;
 };
 
-export function Dashboard({ organizationId, organizationName, repairOrderId, latestEstimateVersionId }: { organizationId: string; organizationName: string; repairOrderId: string | null; latestEstimateVersionId: string | null }) {
+type RepairOrderSummary = {
+  id: string;
+  roNumber: string;
+  vehicle: string;
+  workflowStatus: string;
+  estimateLabel: string;
+  estimateStatus: string | null;
+  updatedLabel: string;
+};
+
+function repairOrderStatus(repairOrder: RepairOrderSummary) {
+  if (repairOrder.estimateStatus === "requires_human_verification") {
+    return { label: "Human verification", tone: "amber" as const };
+  }
+  if (repairOrder.estimateStatus === "verified") {
+    return { label: "Estimate verified", tone: "green" as const };
+  }
+  return {
+    label: repairOrder.workflowStatus.replaceAll("_", " "),
+    tone: "cyan" as const,
+  };
+}
+
+export function Dashboard({ organizationId, organizationName, repairOrderId, latestEstimateVersionId, repairOrders, repairOrderCount }: { organizationId: string; organizationName: string; repairOrderId: string | null; latestEstimateVersionId: string | null; repairOrders: RepairOrderSummary[]; repairOrderCount: number }) {
   const router = useRouter();
   const uploadRef = useRef<HTMLInputElement>(null);
   const [uploadState, setUploadState] = useState<"idle" | "uploading" | "done" | "error">("idle");
@@ -177,10 +192,10 @@ export function Dashboard({ organizationId, organizationName, repairOrderId, lat
 
           <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4" aria-label="Repair workflow summary">
             {([
-              ["Open repairs", "18", "+3 this week", Wrench, "cyan"],
+              ["Open repairs", String(repairOrderCount), "Live workspace records", Wrench, "cyan"],
               ["Supplement reviews", "6", "2 new candidates", FileSearch, "amber"],
               ["Critical reviews", "1", "Qualified review required", AlertTriangle, "rose"],
-              ["Estimate sync", "17 / 18", "1 source verification", Gauge, "green"],
+              ["Estimate sync", `${repairOrders.filter((item) => item.estimateStatus).length} / ${repairOrderCount}`, "Imported estimates", Gauge, "green"],
             ] as const).map(([label, value, detail, Icon, tone]) => (
               <Card key={String(label)} className="p-5">
                 <div className="flex items-start justify-between"><p className="text-sm font-medium text-slate-400">{String(label)}</p><span className={cn("grid size-9 place-items-center rounded-lg", tone === "cyan" && "bg-cyan-300/10 text-cyan-200", tone === "amber" && "bg-amber-300/10 text-amber-200", tone === "rose" && "bg-rose-300/10 text-rose-200", tone === "green" && "bg-emerald-300/10 text-emerald-200")}><Icon className="size-4" /></span></div>
@@ -191,12 +206,13 @@ export function Dashboard({ organizationId, organizationName, repairOrderId, lat
 
           <section className="grid gap-6 xl:grid-cols-[1.55fr_.85fr]">
             <Card className="overflow-hidden">
-              <CardHeader><div><div className="flex items-center gap-2"><h3 className="font-bold">Recent repair orders</h3><Badge variant="cyan">Prototype data</Badge></div><p className="mt-1 text-sm text-slate-500">Visual preview only; these rows are not saved records.</p></div><Button variant="ghost" size="sm" disabled>View all <ArrowUpRight className="size-4" /></Button></CardHeader>
+              <CardHeader><div><div className="flex items-center gap-2"><h3 className="font-bold">Recent repair orders</h3><Badge variant="cyan">Live data</Badge></div><p className="mt-1 text-sm text-slate-500">Imported and active repair orders in this workspace.</p></div><Button variant="ghost" size="sm" disabled>View all <ArrowUpRight className="size-4" /></Button></CardHeader>
               <div className="overflow-x-auto">
                 <table className="w-full min-w-[760px] text-left text-sm">
-                  <thead className="border-b border-white/7 text-xs uppercase tracking-wider text-slate-600"><tr>{["RO", "Vehicle", "Estimator", "Estimate", "Workflow status", "Updated", ""].map((heading) => <th className="px-5 py-3 font-semibold" key={heading}>{heading}</th>)}</tr></thead>
-                  <tbody>{demoRepairOrders.map((item) => <tr className="border-b border-white/5 opacity-75" key={item.ro}><td className="px-5 py-4 font-bold text-cyan-200">#{item.ro}</td><td className="px-5 py-4 font-semibold">{item.vehicle}</td><td className="px-5 py-4 text-slate-400">{item.estimator}</td><td className="px-5 py-4 text-slate-400">{item.estimate}</td><td className="px-5 py-4"><Badge variant={item.tone}>{item.status}</Badge></td><td className="px-5 py-4 text-slate-500">{item.updated}</td><td className="px-5 py-4"><button disabled aria-label={`Prototype actions for repair order ${item.ro}`}><MoreHorizontal className="size-4 text-slate-600" /></button></td></tr>)}</tbody>
+                  <thead className="border-b border-white/7 text-xs uppercase tracking-wider text-slate-600"><tr>{["RO", "Vehicle", "Estimate", "Workflow status", "Updated", ""].map((heading) => <th className="px-5 py-3 font-semibold" key={heading}>{heading}</th>)}</tr></thead>
+                  <tbody>{repairOrders.map((item) => { const status = repairOrderStatus(item); return <tr className="border-b border-white/5" key={item.id}><td className="px-5 py-4 font-bold text-cyan-200">#{item.roNumber}</td><td className="px-5 py-4 font-semibold">{item.vehicle}</td><td className="px-5 py-4 text-slate-400">{item.estimateLabel}</td><td className="px-5 py-4"><Badge variant={status.tone}>{status.label}</Badge></td><td className="px-5 py-4 text-slate-500">{item.updatedLabel}</td><td className="px-5 py-4"><Link className="inline-flex min-h-9 items-center gap-1 rounded-lg px-2 text-cyan-200 hover:bg-cyan-300/10" href={`/repair-orders/${item.id}/estimate`} aria-label={`Open repair order ${item.roNumber}`}>Open <ArrowUpRight className="size-4" /></Link></td></tr>; })}</tbody>
                 </table>
+                {repairOrders.length === 0 && <p className="px-5 py-8 text-center text-sm text-slate-500">No repair orders have been imported yet.</p>}
               </div>
             </Card>
 
