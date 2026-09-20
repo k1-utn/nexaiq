@@ -32,6 +32,7 @@ type EstimateLine = {
   amount: number | string | null;
   raw_text: string;
   parse_confidence: number | string | null;
+  line_role: "estimate_operation" | "automatic_refinish_calculation";
 };
 
 type EstimateLineReview = {
@@ -109,11 +110,16 @@ export function EstimateVerification({
     return latest;
   }, [reviews]);
 
-  const reviewedCount = lines.filter((line) => {
+  const reviewableLines = lines.filter(
+    (line) => line.line_role !== "automatic_refinish_calculation",
+  );
+  const automaticLineCount = lines.length - reviewableLines.length;
+  const reviewedCount = reviewableLines.filter((line) => {
     const decision = latestByLine.get(line.id)?.decision;
     return decision ? finalDecisions.has(decision) : false;
   }).length;
-  const verificationComplete = lines.length > 0 && reviewedCount === lines.length;
+  const verificationComplete =
+    reviewableLines.length > 0 && reviewedCount === reviewableLines.length;
 
   function draftFor(line: EstimateLine) {
     return drafts[line.id] ?? {
@@ -188,8 +194,9 @@ export function EstimateVerification({
             <p className="mt-2 text-slate-400">{repairOrder.vehicle}{repairOrder.vin ? ` · VIN ${repairOrder.vin}` : ""}</p>
           </div>
           <Card className="min-w-[280px] p-4">
-            <div className="flex items-center justify-between text-sm"><span className="text-slate-400">Lines resolved</span><span className="font-bold">{reviewedCount} / {lines.length}</span></div>
-            <div className="mt-3 h-2 overflow-hidden rounded-full bg-white/7"><div className="h-full rounded-full bg-cyan-300 transition-all" style={{ width: `${lines.length ? (reviewedCount / lines.length) * 100 : 0}%` }} /></div>
+            <div className="flex items-center justify-between text-sm"><span className="text-slate-400">Reviewable lines resolved</span><span className="font-bold">{reviewedCount} / {reviewableLines.length}</span></div>
+            <div className="mt-3 h-2 overflow-hidden rounded-full bg-white/7"><div className="h-full rounded-full bg-cyan-300 transition-all" style={{ width: `${reviewableLines.length ? (reviewedCount / reviewableLines.length) * 100 : 0}%` }} /></div>
+            {automaticLineCount > 0 && <p className="mt-3 text-xs text-cyan-200">{automaticLineCount} automatic refinish calculation{automaticLineCount === 1 ? "" : "s"} preserved separately.</p>}
             <p className="mt-3 text-xs leading-relaxed text-slate-500">This records source verification only. It is not repair approval, QC sign-off, or vehicle release.</p>
           </Card>
         </section>
@@ -219,13 +226,14 @@ export function EstimateVerification({
               const latest = latestByLine.get(line.id);
               const draft = draftFor(line);
               const confidence = confidencePercent(line.parse_confidence);
+              const isAutomatic = line.line_role === "automatic_refinish_calculation";
               const isEditing = editingLineId === line.id;
               const isPending = pendingLineId === line.id;
               const effectiveDescription = latest?.decision === "corrected" ? latest.corrected_description : line.description;
               const effectiveAmount = latest?.decision === "corrected" ? latest.corrected_amount : line.amount;
 
               return (
-                <Card key={line.id} className={cn("overflow-hidden", latest?.decision === "needs_review" && "border-amber-300/25", latest?.decision === "excluded" && "opacity-75")}>
+                <Card key={line.id} className={cn("overflow-hidden", isAutomatic && "border-cyan-300/20 bg-cyan-300/[.03]", latest?.decision === "needs_review" && "border-amber-300/25", latest?.decision === "excluded" && "opacity-75")}>
                   <CardHeader className="gap-4">
                     <div className="flex min-w-0 items-start gap-3">
                       <span className="grid size-9 shrink-0 place-items-center rounded-lg bg-white/5 text-sm font-bold text-slate-300">{index + 1}</span>
@@ -237,7 +245,7 @@ export function EstimateVerification({
                         <p className="mt-1 text-sm text-slate-400">{formatAmount(effectiveAmount)}{confidence !== null ? ` · Parser confidence ${confidence}%` : ""}</p>
                       </div>
                     </div>
-                    {latest ? <Badge variant={latest.decision === "confirmed" || latest.decision === "corrected" ? "green" : latest.decision === "needs_review" ? "amber" : "rose"}>{decisionLabels[latest.decision]}</Badge> : <Badge variant="amber">Unreviewed</Badge>}
+                    {isAutomatic ? <Badge variant="cyan">Automatically included</Badge> : latest ? <Badge variant={latest.decision === "confirmed" || latest.decision === "corrected" ? "green" : latest.decision === "needs_review" ? "amber" : "rose"}>{decisionLabels[latest.decision]}</Badge> : <Badge variant="amber">Unreviewed</Badge>}
                   </CardHeader>
 
                   <CardContent className="space-y-4">
@@ -246,6 +254,11 @@ export function EstimateVerification({
                       <p className="mt-2 whitespace-pre-wrap font-mono text-xs leading-relaxed text-slate-300">{line.raw_text}</p>
                     </div>
 
+                    {isAutomatic ? (
+                      <div className="rounded-xl border border-cyan-300/15 bg-cyan-300/[.04] p-4 text-sm leading-relaxed text-cyan-100">
+                        Clear coat is an automatic calculation tied to refinish operations. It is preserved from the source estimate for traceability and does not require a separate review decision.
+                      </div>
+                    ) : (<>
                     {latest && (
                       <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-slate-500">
                         <span className="flex items-center gap-1.5"><History className="size-3.5" />Recorded {new Date(latest.reviewed_at).toLocaleString("en-CA")}</span>
@@ -291,6 +304,7 @@ export function EstimateVerification({
                         </>
                       )}
                     </div>
+                    </>)}
                   </CardContent>
                 </Card>
               );

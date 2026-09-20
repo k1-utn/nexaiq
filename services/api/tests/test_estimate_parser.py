@@ -36,6 +36,14 @@ def test_document_instructions_are_data_not_commands() -> None:
     assert any("untrusted data" in warning for warning in warnings)
 
 
+def test_clear_coat_is_classified_as_an_automatic_refinish_calculation() -> None:
+    lines, _ = parse_estimate_lines(["16 AUTO Clear Coat Additional Refinish 1.5 0.0 0.00"])
+
+    assert len(lines) == 1
+    assert lines[0].line_role == "automatic_refinish_calculation"
+    assert not lines[0].human_review_required
+
+
 def test_pdf_endpoint_preserves_provenance_and_requires_review() -> None:
     output = BytesIO()
     writer = PdfWriter()

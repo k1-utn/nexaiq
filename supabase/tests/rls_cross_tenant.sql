@@ -198,6 +198,7 @@ declare
   persisted_media_id uuid;
   persisted_estimate_id uuid;
   persisted_line_id uuid;
+  automatic_line_id uuid;
   first_review_id uuid;
   latest_review_id uuid;
   direct_review_id uuid;
@@ -359,14 +360,24 @@ begin
       repeat('0', 64),
       'nexaiq_test_parser',
       '1.0',
-      jsonb_build_array(jsonb_build_object(
-        'source_line_number', 12,
-        'operation_code', 'RPL',
-        'description', 'Replace bumper cover',
-        'amount', 125.00,
-        'raw_text', '12 RPL Replace bumper cover 125.00',
-        'confidence', 0.9100
-      ))
+      jsonb_build_array(
+        jsonb_build_object(
+          'source_line_number', 12,
+          'operation_code', 'RPL',
+          'description', 'Replace bumper cover',
+          'amount', 125.00,
+          'raw_text', '12 RPL Replace bumper cover 125.00',
+          'confidence', 0.9100
+        ),
+        jsonb_build_object(
+          'source_line_number', 13,
+          'operation_code', 'AUTO',
+          'description', 'Clear Coat Additional Refinish',
+          'amount', 0.00,
+          'raw_text', '13 AUTO Clear Coat Additional Refinish 0.00',
+          'confidence', 0.9100
+        )
+      )
     ) as result;
   if persisted_media_id is distinct from 'a6000000-0000-4000-8000-000000000001'::uuid
      or not exists (
@@ -379,7 +390,28 @@ begin
 
   select id into persisted_line_id
     from public.estimate_lines
-    where estimate_version_id = persisted_estimate_id;
+    where estimate_version_id = persisted_estimate_id
+      and description = 'Replace bumper cover';
+
+  select id into automatic_line_id
+    from public.estimate_lines
+    where estimate_version_id = persisted_estimate_id
+      and description = 'Clear Coat Additional Refinish'
+      and line_role = 'automatic_refinish_calculation';
+
+  if automatic_line_id is null then
+    raise exception 'clear coat was not classified as an automatic refinish calculation';
+  end if;
+
+  begin
+    perform public.record_estimate_line_review(
+      automatic_line_id, 'corrected', 'Changed clear coat', 10.00,
+      'This separate change must be rejected.'
+    );
+    raise exception 'automatic clear-coat line accepted a separate review decision';
+  exception
+    when invalid_parameter_value then null;
+  end;
 
   select result.review_id, result.verification_status
     into first_review_id, returned_status

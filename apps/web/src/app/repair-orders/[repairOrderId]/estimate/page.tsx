@@ -65,7 +65,7 @@ export default async function EstimatePage({
   const [{ data: lines }, { data: reviews }, { data: sourceMedia }] = await Promise.all([
     supabase
       .from("estimate_lines")
-      .select("id, source_line_number, operation_code, description, amount, raw_text, parse_confidence")
+      .select("id, source_line_number, operation_code, description, amount, raw_text, parse_confidence, line_role")
       .eq("estimate_version_id", estimateVersion.id)
       .order("source_line_number", { ascending: true }),
     supabase

@@ -16,6 +16,7 @@ PDF_MAGIC = b"%PDF-"
 LINE_PATTERN = re.compile(
     r"^\s*(?P<number>\d{1,4})\s+(?:(?P<operation>[A-Z&/]{1,8})\s+)?(?P<description>.{3,}?)\s+(?P<amount>-?\$?[\d,]+\.\d{2})\s*$"
 )
+CLEAR_COAT_PATTERN = re.compile(r"\bclear\s*-?\s*coat\b", re.IGNORECASE)
 
 
 async def read_validated_pdf(upload: UploadFile) -> bytes:
@@ -86,6 +87,14 @@ def parse_estimate_lines(pages: list[str]) -> tuple[list[EstimateLineDraft], lis
                     amount=amount,
                     raw_text=compact,
                     confidence=0.72,
+                    human_review_required=not bool(
+                        CLEAR_COAT_PATTERN.search(match.group("description"))
+                    ),
+                    line_role=(
+                        "automatic_refinish_calculation"
+                        if CLEAR_COAT_PATTERN.search(match.group("description"))
+                        else "estimate_operation"
+                    ),
                 )
             )
     warnings = ["Document content was treated as untrusted data and was not executed."]

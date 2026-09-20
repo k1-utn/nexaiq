@@ -1,6 +1,7 @@
 from datetime import UTC, datetime
 from decimal import Decimal
 from enum import StrEnum
+from typing import Literal
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field
@@ -22,6 +23,9 @@ class EstimateLineDraft(BaseModel):
     raw_text: str = Field(min_length=1, max_length=2000)
     confidence: float = Field(ge=0, le=1)
     human_review_required: bool = True
+    line_role: Literal["estimate_operation", "automatic_refinish_calculation"] = (
+        "estimate_operation"
+    )
 
 
 class SourceProvenance(BaseModel):
