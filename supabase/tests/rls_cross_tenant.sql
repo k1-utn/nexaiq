@@ -102,6 +102,43 @@ insert into public.estimate_lines (
   'b6000000-0000-4000-8000-000000000002', 1,
   'R&I', 'Tenant B line', 50.00, '1 R&I Tenant B line 50.00', 0.9000
 );
+insert into public.connector_devices (
+  id, organization_id, location_id, device_identifier, device_name,
+  registered_by, platform, version, watch_path_hash, status
+) values (
+  'b7100000-0000-4000-8000-000000000002',
+  'b0000000-0000-4000-8000-000000000002',
+  'b1000000-0000-4000-8000-000000000002',
+  'b7200000-0000-4000-8000-000000000002',
+  'Tenant B connector',
+  '20000000-0000-4000-8000-000000000002',
+  'windows', '0.1.0', repeat('b', 64), 'active'
+);
+insert into public.connector_sync_batches (
+  id, organization_id, location_id, connector_device_id,
+  client_batch_id, connector_version, status, file_count,
+  total_bytes, discovered_at
+) values (
+  'b7300000-0000-4000-8000-000000000002',
+  'b0000000-0000-4000-8000-000000000002',
+  'b1000000-0000-4000-8000-000000000002',
+  'b7100000-0000-4000-8000-000000000002',
+  'b7400000-0000-4000-8000-000000000002',
+  '0.1.0', 'format_review_required', 1, 16, clock_timestamp()
+);
+insert into public.connector_sync_files (
+  id, organization_id, connector_sync_batch_id, client_file_id,
+  source_filename, file_extension, mime_type, byte_size,
+  content_sha256, storage_object_path
+) values (
+  'b7500000-0000-4000-8000-000000000002',
+  'b0000000-0000-4000-8000-000000000002',
+  'b7300000-0000-4000-8000-000000000002',
+  'b7600000-0000-4000-8000-000000000002',
+  'tenant-b.ad1', '.ad1', 'application/octet-stream', 16,
+  repeat('c', 64),
+  'b0000000-0000-4000-8000-000000000002/b7200000-0000-4000-8000-000000000002/b7400000-0000-4000-8000-000000000002/b7600000-0000-4000-8000-000000000002/tenant-b.ad1'
+);
 
 set local role anon;
 do $$
@@ -179,6 +216,33 @@ begin
   if visible_repairs is distinct from array['A-100']::text[] then
     raise exception 'tenant A repair-order visibility failed: %', visible_repairs;
   end if;
+
+  if exists (
+    select 1 from public.connector_devices
+    where organization_id = 'b0000000-0000-4000-8000-000000000002'
+  ) or exists (
+    select 1 from public.connector_sync_batches
+    where organization_id = 'b0000000-0000-4000-8000-000000000002'
+  ) or exists (
+    select 1 from public.connector_sync_files
+    where organization_id = 'b0000000-0000-4000-8000-000000000002'
+  ) then
+    raise exception 'tenant A can read tenant B connector records';
+  end if;
+
+  begin
+    insert into public.connector_devices (
+      organization_id, location_id, device_identifier, device_name
+    ) values (
+      'a0000000-0000-4000-8000-000000000001',
+      'a1000000-0000-4000-8000-000000000001',
+      'a7200000-0000-4000-8000-000000000001',
+      'Fabricated connector'
+    );
+    raise exception 'tenant A directly created a connector device';
+  exception
+    when insufficient_privilege then null;
+  end;
 
   if exists (
     select 1 from public.repair_orders
@@ -572,7 +636,108 @@ declare
   review_package_item_count integer;
   review_package_status text;
   package_decision_time timestamptz;
+  connector_device_id uuid;
+  connector_device_status text;
+  connector_batch_id uuid;
+  connector_file_id uuid;
+  connector_duplicate boolean;
 begin
+  select registered.connector_device_id, registered.device_status
+    into connector_device_id, connector_device_status
+    from public.register_connector_device(
+      '10000000-0000-4000-8000-000000000001',
+      'a0000000-0000-4000-8000-000000000001',
+      'a1000000-0000-4000-8000-000000000001',
+      'a7200000-0000-4000-8000-000000000001',
+      'Tenant A connector', '0.1.0', repeat('a', 64)
+    ) registered;
+
+  if connector_device_status <> 'active'
+     or not exists (
+       select 1 from public.connector_devices device
+       where device.id = connector_device_id
+         and device.organization_id = 'a0000000-0000-4000-8000-000000000001'
+         and device.registered_by = '10000000-0000-4000-8000-000000000001'
+         and device.watch_path_hash = repeat('a', 64)
+     )
+     or not exists (
+       select 1 from public.audit_events event
+       where event.entity_id = connector_device_id
+         and event.event_type = 'connector_device_registered'
+     ) then
+    raise exception 'Stage 6 connector registration was not derived and audited';
+  end if;
+
+  select persisted.connector_sync_batch_id,
+         persisted.connector_sync_file_id,
+         persisted.already_persisted
+    into connector_batch_id, connector_file_id, connector_duplicate
+    from public.persist_connector_sync_file(
+      '10000000-0000-4000-8000-000000000001',
+      'a0000000-0000-4000-8000-000000000001',
+      'a1000000-0000-4000-8000-000000000001',
+      'a7200000-0000-4000-8000-000000000001',
+      'a7400000-0000-4000-8000-000000000001',
+      'a7600000-0000-4000-8000-000000000001',
+      'tenant-a.ad1', '.ad1', 'application/octet-stream', 16,
+      repeat('d', 64),
+      'a0000000-0000-4000-8000-000000000001/a7200000-0000-4000-8000-000000000001/a7400000-0000-4000-8000-000000000001/a7600000-0000-4000-8000-000000000001/tenant-a.ad1',
+      '0.1.0', clock_timestamp()
+    ) persisted;
+
+  if connector_duplicate
+     or not exists (
+       select 1 from public.connector_sync_batches batch
+       where batch.id = connector_batch_id
+         and batch.file_count = 1
+         and batch.total_bytes = 16
+         and batch.status = 'format_review_required'
+     )
+     or not exists (
+       select 1 from public.connector_sync_files file
+       where file.id = connector_file_id
+         and file.content_sha256 = repeat('d', 64)
+         and file.parse_status = 'awaiting_format_validation'
+     )
+     or not exists (
+       select 1 from public.audit_events event
+       where event.entity_id = connector_file_id
+         and event.event_type = 'connector_ems_file_received'
+     ) then
+    raise exception 'Stage 6 EMS file persistence was not idempotent and audited';
+  end if;
+
+  select persisted.already_persisted
+    into connector_duplicate
+    from public.persist_connector_sync_file(
+      '10000000-0000-4000-8000-000000000001',
+      'a0000000-0000-4000-8000-000000000001',
+      'a1000000-0000-4000-8000-000000000001',
+      'a7200000-0000-4000-8000-000000000001',
+      'a7400000-0000-4000-8000-000000000001',
+      'a7600000-0000-4000-8000-000000000001',
+      'tenant-a.ad1', '.ad1', 'application/octet-stream', 16,
+      repeat('d', 64),
+      'a0000000-0000-4000-8000-000000000001/a7200000-0000-4000-8000-000000000001/a7400000-0000-4000-8000-000000000001/a7600000-0000-4000-8000-000000000001/tenant-a.ad1',
+      '0.1.0', clock_timestamp()
+    ) persisted;
+  if not connector_duplicate then
+    raise exception 'Stage 6 EMS file retry created a duplicate record';
+  end if;
+
+  begin
+    perform public.register_connector_device(
+      '10000000-0000-4000-8000-000000000001',
+      'b0000000-0000-4000-8000-000000000002',
+      'b1000000-0000-4000-8000-000000000002',
+      'b7700000-0000-4000-8000-000000000002',
+      'Cross-tenant connector', '0.1.0', repeat('e', 64)
+    );
+    raise exception 'tenant A registered a connector for tenant B';
+  exception
+    when insufficient_privilege then null;
+  end;
+
   select package.package_id, package.package_number,
          package.item_count, package.package_status
     into review_package_id, review_package_number,

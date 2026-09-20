@@ -11,12 +11,15 @@
   "scripts": {
     "dev:web": "npm run dev --workspace @nexaiq/web",
     "dev:mobile": "npm run start --workspace @nexaiq/mobile",
+    "dev:connector": "dotnet run --project apps/connector/src/NexaIQ.Connector/NexaIQ.Connector.csproj",
+    "build:connector": "dotnet build apps/connector/src/NexaIQ.Connector/NexaIQ.Connector.csproj --configuration Release",
+    "test:connector": "dotnet run --project apps/connector/tests/NexaIQ.Connector.Core.Tests/NexaIQ.Connector.Core.Tests.csproj --configuration Release",
     "build": "npm run build --workspace @nexaiq/shared && npm run build --workspace @nexaiq/web",
     "lint": "npm run lint --workspace @nexaiq/web",
     "typecheck": "npm run typecheck --workspace @nexaiq/shared && npm run typecheck --workspace @nexaiq/web && npm run typecheck --workspace @nexaiq/mobile",
     "test": "npm run test --workspace @nexaiq/shared",
     "db:test:linked": "supabase db query --linked --file supabase/tests/tenant_isolation.sql && supabase db query --linked --file supabase/tests/rls_cross_tenant.sql",
-    "check": "npm run lint && npm run typecheck && npm run test && npm run build"
+    "check": "npm run lint && npm run typecheck && npm run test && npm run test:connector && npm run build && npm run build:connector"
   },
   "devDependencies": {
     "supabase": "2.116.0"

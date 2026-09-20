@@ -1,8 +1,12 @@
 # Supabase hosted development
 
-The migrations create the nexaIQ tenant schema, RLS policies, append-only audit controls, and the private `repair-evidence` bucket. Object keys use this structure:
+The migrations create the nexaIQ tenant schema, RLS policies, append-only audit controls, and private `repair-evidence` and `connector-imports` buckets. Repair evidence object keys use this structure:
 
 `{organization_id}/{repair_order_id}/{media_id}/{sanitized_filename}`
+
+Stage 6 connector imports use:
+
+`{organization_id}/{device_identifier}/{client_batch_id}/{client_file_id}/{sanitized_filename}`
 
 Docker and the local Supabase stack are not used. Authenticate and link the repository to a dedicated hosted development project:
 
@@ -34,5 +38,7 @@ Use only publishable keys in web and mobile configuration. Normal API operations
 Estimate source versions and parsed lines are not updateable or deleteable by browser roles. Human verification is stored as an append-only review chain. Client inserts pass through database-controlled derivation and RLS, while the public review function runs with the caller's normal privileges.
 
 Stage 4 AI findings, evidence links, and supplement candidates are read-only to browser table APIs. Human evaluation inserts pass through RLS and protected triggers that derive the tenant, actor, source result, supersession chain, and audit event. The public review function uses the caller's normal privileges and requires `records:write`. Confirmation creates an estimator-review candidate; no database function modifies an estimate or submits a supplement.
+
+Stage 6 connector devices, sync batches, and source-file rows are read-only to authenticated clients. Registration and persistence functions are executable only by `service_role`; they re-check the initiating actor's membership and `records:write` permission, enforce the registered location and tenant-prefixed object path, reject changed-content idempotency collisions, and append audit events.
 
 The analysis begin/complete/fail functions are executable only by `service_role`. They independently validate the initiating actor's active membership and permissions, bind inputs to the verified estimate and privacy-eligible media, and maintain job/audit state. Provider policy and evaluated-model activation remain explicit organization governance steps; see [`docs/ai-safety/STAGE_4_RUNBOOK.md`](../docs/ai-safety/STAGE_4_RUNBOOK.md).

@@ -28,6 +28,7 @@ class Settings(BaseSettings):
     ai_request_timeout_seconds: int = 120
     max_analysis_photos: int = 8
     max_analysis_photo_bytes: int = 24 * 1024 * 1024
+    max_connector_file_bytes: int = 5 * 1024 * 1024
 
     @property
     def allowed_origins(self) -> list[str]:

@@ -12,7 +12,8 @@ begin
       'organizations', 'repair_orders', 'audit_events', 'media',
       'estimate_line_reviews', 'scan_session_media', 'finding_evidence',
       'ai_evaluation_events', 'supplement_candidate_review_events',
-      'supplement_review_packages', 'supplement_review_package_items'
+      'supplement_review_packages', 'supplement_review_package_items',
+      'connector_devices', 'connector_sync_batches', 'connector_sync_files'
     ])
       as required(table_name)
     where to_regclass('public.' || required.table_name) is null
@@ -28,7 +29,8 @@ begin
       'organizations', 'repair_orders', 'audit_events', 'media',
       'estimate_line_reviews', 'scan_session_media', 'finding_evidence',
       'ai_evaluation_events', 'supplement_candidate_review_events',
-      'supplement_review_packages', 'supplement_review_package_items'
+      'supplement_review_packages', 'supplement_review_package_items',
+      'connector_devices', 'connector_sync_batches', 'connector_sync_files'
     ])
       as required(table_name)
     join pg_class c on c.oid = to_regclass('public.' || required.table_name)
@@ -43,7 +45,8 @@ begin
     into rls_unforced_table
     from unnest(array[
       'supplement_candidate_review_events',
-      'supplement_review_packages', 'supplement_review_package_items'
+      'supplement_review_packages', 'supplement_review_package_items',
+      'connector_devices', 'connector_sync_batches', 'connector_sync_files'
     ])
       as required(table_name)
     join pg_class c on c.oid = to_regclass('public.' || required.table_name)
@@ -161,6 +164,39 @@ begin
        'EXECUTE'
      ) then
     raise exception 'service role cannot execute the controlled Stage 5 package workflow';
+  end if;
+
+  if has_table_privilege('authenticated', 'public.connector_devices', 'INSERT')
+     or has_table_privilege('authenticated', 'public.connector_devices', 'UPDATE')
+     or has_table_privilege('authenticated', 'public.connector_sync_batches', 'INSERT')
+     or has_table_privilege('authenticated', 'public.connector_sync_files', 'INSERT') then
+    raise exception 'browser roles can fabricate Stage 6 connector records';
+  end if;
+
+  if has_function_privilege(
+       'authenticated',
+       'public.register_connector_device(uuid,uuid,uuid,uuid,text,text,text)',
+       'EXECUTE'
+     )
+     or has_function_privilege(
+       'authenticated',
+       'public.persist_connector_sync_file(uuid,uuid,uuid,uuid,uuid,uuid,text,text,text,bigint,text,text,text,timestamptz)',
+       'EXECUTE'
+     ) then
+    raise exception 'browser roles can execute service-only Stage 6 connector functions';
+  end if;
+
+  if not has_function_privilege(
+       'service_role',
+       'public.register_connector_device(uuid,uuid,uuid,uuid,text,text,text)',
+       'EXECUTE'
+     )
+     or not has_function_privilege(
+       'service_role',
+       'public.persist_connector_sync_file(uuid,uuid,uuid,uuid,uuid,uuid,text,text,text,bigint,text,text,text,timestamptz)',
+       'EXECUTE'
+     ) then
+    raise exception 'service role cannot execute the controlled Stage 6 connector workflow';
   end if;
 end;
 $$;

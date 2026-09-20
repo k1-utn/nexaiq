@@ -1,5 +1,6 @@
 import re
 from dataclasses import dataclass
+from datetime import datetime
 from urllib.parse import quote
 from uuid import NAMESPACE_URL, UUID, uuid4, uuid5
 
@@ -8,8 +9,10 @@ from fastapi import HTTPException
 
 from app.core.auth import RequestContext
 from app.core.config import settings
+from app.domain.connectors import ConnectorDeviceRegistration
 from app.domain.estimates import EstimateLineDraft, SourceProvenance
 from app.domain.evidence import CaptureKind
+from app.services.connector_validator import ValidatedConnectorFile
 from app.services.evidence_validator import ValidatedCapture
 
 SAFE_FILENAME = re.compile(r"[^A-Za-z0-9._-]+")
@@ -110,6 +113,19 @@ class RecordedSupplementReviewPackageDecision:
     decided_at: str
 
 
+@dataclass(frozen=True)
+class RegisteredConnectorDevice:
+    connector_device_id: UUID
+
+
+@dataclass(frozen=True)
+class PersistedConnectorFile:
+    connector_device_id: UUID
+    connector_sync_batch_id: UUID
+    connector_sync_file_id: UUID
+    already_persisted: bool
+
+
 class SupabaseGateway:
     def __init__(self) -> None:
         self.url = settings.supabase_url
@@ -133,6 +149,115 @@ class SupabaseGateway:
         if content_type:
             headers["Content-Type"] = "application/json"
         return headers
+
+    async def register_connector_device(
+        self,
+        *,
+        context: RequestContext,
+        registration: ConnectorDeviceRegistration,
+    ) -> RegisteredConnectorDevice:
+        if context.actor_id is None:
+            raise HTTPException(status_code=401, detail="Authenticated user identity required")
+        async with httpx.AsyncClient(timeout=20) as client:
+            response = await client.post(
+                f"{self.url}/rest/v1/rpc/register_connector_device",
+                headers=self._server_headers(content_type=True),
+                json={
+                    "p_actor_id": str(context.actor_id),
+                    "p_organization_id": str(context.organization_id),
+                    "p_location_id": str(registration.location_id),
+                    "p_device_identifier": str(registration.device_identifier),
+                    "p_device_name": registration.device_name,
+                    "p_connector_version": registration.connector_version,
+                    "p_watch_path_hash": registration.watch_path_sha256,
+                },
+            )
+        if response.status_code not in {200, 201}:
+            raise HTTPException(status_code=403, detail="Connector registration was denied")
+        payload = response.json()
+        row = payload[0] if isinstance(payload, list) and payload else payload
+        if not isinstance(row, dict):
+            raise HTTPException(
+                status_code=502,
+                detail="Connector registration response was invalid",
+            )
+        return RegisteredConnectorDevice(connector_device_id=UUID(row["connector_device_id"]))
+
+    async def persist_connector_file(
+        self,
+        *,
+        context: RequestContext,
+        location_id: UUID,
+        device_identifier: UUID,
+        client_batch_id: UUID,
+        client_file_id: UUID,
+        connector_version: str,
+        discovered_at: datetime,
+        connector_file: ValidatedConnectorFile,
+    ) -> PersistedConnectorFile:
+        if context.actor_id is None:
+            raise HTTPException(status_code=401, detail="Authenticated user identity required")
+
+        safe_name = SAFE_FILENAME.sub("_", connector_file.source_filename).strip("._")
+        safe_name = safe_name[:180] or f"source{connector_file.file_extension}"
+        object_path = (
+            f"{context.organization_id}/{device_identifier}/{client_batch_id}/"
+            f"{client_file_id}/{safe_name}"
+        )
+        object_url = (
+            f"{self.url}/storage/v1/object/connector-imports/"
+            f"{quote(object_path, safe='/')}"
+        )
+        headers = self._server_headers()
+        async with httpx.AsyncClient(timeout=45) as client:
+            upload_response = await client.post(
+                object_url,
+                headers={
+                    **headers,
+                    "Content-Type": connector_file.mime_type,
+                    "x-upsert": "false",
+                },
+                content=connector_file.data,
+            )
+            uploaded_now = upload_response.status_code in {200, 201}
+            if not uploaded_now and not _storage_object_already_exists(upload_response):
+                raise HTTPException(status_code=502, detail="Private EMS file upload failed")
+
+            rpc_response = await client.post(
+                f"{self.url}/rest/v1/rpc/persist_connector_sync_file",
+                headers={**headers, "Content-Type": "application/json"},
+                json={
+                    "p_actor_id": str(context.actor_id),
+                    "p_organization_id": str(context.organization_id),
+                    "p_location_id": str(location_id),
+                    "p_device_identifier": str(device_identifier),
+                    "p_client_batch_id": str(client_batch_id),
+                    "p_client_file_id": str(client_file_id),
+                    "p_source_filename": connector_file.source_filename,
+                    "p_file_extension": connector_file.file_extension,
+                    "p_mime_type": connector_file.mime_type,
+                    "p_byte_size": len(connector_file.data),
+                    "p_content_sha256": connector_file.content_sha256,
+                    "p_storage_object_path": object_path,
+                    "p_connector_version": connector_version,
+                    "p_discovered_at": discovered_at.isoformat(),
+                },
+            )
+            if rpc_response.status_code not in {200, 201}:
+                if uploaded_now:
+                    await client.delete(object_url, headers=headers)
+                raise HTTPException(status_code=409, detail="EMS file persistence failed")
+
+        payload = rpc_response.json()
+        row = payload[0] if isinstance(payload, list) and payload else payload
+        if not isinstance(row, dict):
+            raise HTTPException(status_code=502, detail="EMS persistence response was invalid")
+        return PersistedConnectorFile(
+            connector_device_id=UUID(row["connector_device_id"]),
+            connector_sync_batch_id=UUID(row["connector_sync_batch_id"]),
+            connector_sync_file_id=UUID(row["connector_sync_file_id"]),
+            already_persisted=bool(row["already_persisted"]),
+        )
 
     async def persist_estimate(
         self,

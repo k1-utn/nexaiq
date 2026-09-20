@@ -6,5 +6,6 @@ This inventory is generated manually for the foundation and must be automated an
 - Expo and React Native
 - FastAPI, Pydantic, Uvicorn, HTTPX, pypdf, python-multipart, structlog, pytest, Ruff
 - Supabase CLI for local development and verification
+- Microsoft .NET 8 and `System.Security.Cryptography.ProtectedData` for the Windows connector
 
 Run package-manager licence inventory and legal review before each production release. Do not include packages or source with incompatible obligations.

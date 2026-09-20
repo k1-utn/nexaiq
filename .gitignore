@@ -14,6 +14,8 @@ __pycache__/
 !.env.example
 *.log
 *.tsbuildinfo
+**/bin/
+**/obj/
 .DS_Store
 Thumbs.db
 supabase/.branches/
