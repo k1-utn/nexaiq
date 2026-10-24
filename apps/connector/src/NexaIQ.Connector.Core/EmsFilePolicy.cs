@@ -19,6 +19,17 @@ public static partial class EmsFilePolicy
         return ExtensionPattern().IsMatch(extension) && !BlockedExtensions.Contains(extension);
     }
 
+    public static int UploadPriority(string path)
+    {
+        return Path.GetExtension(path).ToLowerInvariant() switch
+        {
+            ".env" => 1,
+            ".lin" => 2,
+            ".veh" => 3,
+            _ => 0,
+        };
+    }
+
     public static string ComputePathFingerprint(string path)
     {
         var normalized = Path.GetFullPath(path)

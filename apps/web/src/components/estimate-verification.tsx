@@ -78,6 +78,7 @@ export function EstimateVerification({
   estimate,
   lines,
   reviews,
+  versions,
   currentReviewerId,
 }: {
   organizationName: string;
@@ -85,6 +86,7 @@ export function EstimateVerification({
   estimate: {
     id: string;
     versionNumber: number;
+    sourceSystem: string;
     parseStatus: string;
     parserName: string;
     parserVersion: string;
@@ -96,6 +98,13 @@ export function EstimateVerification({
   };
   lines: EstimateLine[];
   reviews: EstimateLineReview[];
+  versions: Array<{
+    id: string;
+    versionNumber: number;
+    sourceSystem: string;
+    parseStatus: string;
+    importedAt: string;
+  }>;
   currentReviewerId: string;
 }) {
   const router = useRouter();
@@ -201,10 +210,44 @@ export function EstimateVerification({
           </Card>
         </section>
 
+        {versions.length > 1 && (
+          <Card className="p-4">
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
+              <div className="sm:mr-auto">
+                <p className="text-sm font-bold">Estimate versions</p>
+                <p className="mt-1 text-xs text-slate-500">
+                  Select the exact preserved import you want to review.
+                </p>
+              </div>
+              <nav className="flex flex-wrap gap-2" aria-label="Estimate versions">
+                {versions.map((version) => {
+                  const selected = version.id === estimate.id;
+                  const sourceLabel =
+                    version.sourceSystem === "mitchell_ems" ? "EMS" : "PDF";
+                  return (
+                    <Button
+                      asChild
+                      key={version.id}
+                      variant={selected ? "default" : "secondary"}
+                    >
+                      <Link
+                        href={`/repair-orders/${repairOrder.id}/estimate?version=${version.id}`}
+                        aria-current={selected ? "page" : undefined}
+                      >
+                        Version {version.versionNumber} · {sourceLabel}
+                      </Link>
+                    </Button>
+                  );
+                })}
+              </nav>
+            </div>
+          </Card>
+        )}
+
         <Card className="border-cyan-300/15">
           <CardHeader>
-            <div className="flex items-start gap-3"><FileText className="mt-0.5 size-5 text-cyan-200" /><div><h2 className="font-bold">Preserved source</h2><p className="mt-1 text-sm text-slate-400">Compare every parsed line against the original PDF before recording a decision.</p></div></div>
-            {estimate.sourceUrl ? <Button asChild variant="secondary"><a href={estimate.sourceUrl} target="_blank" rel="noreferrer">Open original PDF <ExternalLink className="size-4" /></a></Button> : <Badge variant="amber">Source link unavailable</Badge>}
+            <div className="flex items-start gap-3"><FileText className="mt-0.5 size-5 text-cyan-200" /><div><h2 className="font-bold">Preserved source</h2><p className="mt-1 text-sm text-slate-400">Compare every parsed line against the selected preserved source before recording a decision.</p></div></div>
+            {estimate.sourceUrl ? <Button asChild variant="secondary"><a href={estimate.sourceUrl} target="_blank" rel="noreferrer">Open original PDF <ExternalLink className="size-4" /></a></Button> : estimate.sourceSystem === "mitchell_ems" ? <Badge variant="cyan">Private EMS file set</Badge> : <Badge variant="amber">Source link unavailable</Badge>}
           </CardHeader>
           <CardContent className="grid gap-3 text-sm sm:grid-cols-2 lg:grid-cols-4">
             <div><p className="text-xs uppercase tracking-wider text-slate-600">File</p><p className="mt-1 truncate font-medium">{estimate.sourceFilename}</p></div>

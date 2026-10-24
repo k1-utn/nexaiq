@@ -12,6 +12,8 @@ Stage 6 provides an authorized, human-configured Windows path from Mitchell EMS 
 6. FastAPI validates filename, extension, MIME type, size, and blocked executable/archive signatures, then writes the unmodified source to the private `connector-imports` bucket.
 7. The API parses only the approved dBASE tables and withholds sensitive side tables from extraction.
 8. Service-only database functions persist idempotent tenant-scoped records, create review-required estimate versions, and append audit events.
+9. A changed export queues a new complete folder snapshot under a fresh batch identity; unchanged snapshots are skipped.
+10. The web review page lets estimators switch between preserved EMS and PDF versions without replacing history.
 
 ## Security boundary
 
@@ -21,9 +23,12 @@ Stage 6 provides an authorized, human-configured Windows path from Mitchell EMS 
 - Device registration and file persistence independently validate the initiating user's active `records:write` permission.
 - Storage paths include organization, device, client batch, and client file identifiers.
 - Retries reuse stable identifiers; reused identifiers with different content are rejected.
+- Files within one snapshot upload in a deterministic order, and a failed earlier file blocks later files in that batch so an incomplete snapshot cannot finalize.
 
 ## Parser and import boundary
 
 The parser was built from an authorized Mitchell EMS export and backed by synthetic dBASE fixtures. It imports only ENV estimate metadata, VEH vehicle data, LIN estimate lines, and TTL totals. AD1, AD2, VEN, and DBT data are never extracted because those tables can contain customer, insurer, vendor, address, email, claim, or memo content. Profile tables remain unsupported because they are not required for the initial estimate import.
 
 Once ENV, VEH, and LIN are present in one connector batch, the service idempotently creates or matches the repair order, creates a new estimate version, and imports its lines. Every imported version is marked `requires_human_verification`; no estimate is approved, submitted, or written back automatically.
+
+When any stable file changes after a completed sync, the connector queues every current file in that export folder as one new snapshot. The database reuses an existing estimate only when the complete snapshot hash is unchanged; otherwise it creates the next immutable estimate version.

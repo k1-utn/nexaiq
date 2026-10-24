@@ -5,6 +5,8 @@ var failures = new List<string>();
 Check(EmsFilePolicy.IsCandidate("repair.AD1"), "EMS-style extension should be accepted");
 Check(!EmsFilePolicy.IsCandidate("malware.exe"), "Executable extension should be rejected");
 Check(!EmsFilePolicy.IsCandidate("archive.zip"), "Archive extension should be rejected");
+Check(EmsFilePolicy.UploadPriority("repair.VEH") > EmsFilePolicy.UploadPriority("repair.AD1"),
+    "Vehicle table should upload after non-core files so it finalizes a complete snapshot");
 Check(
     EmsFilePolicy.ComputePathFingerprint(@"C:\EMS")
         == EmsFilePolicy.ComputePathFingerprint(@"c:\ems\"),
@@ -37,6 +39,44 @@ try
     Check(
         !File.ReadAllText(paths.SessionPath).Contains("refresh-token", StringComparison.Ordinal),
         "Stored session must not contain plaintext tokens");
+
+    var queue = ConnectorQueueState.Empty;
+    var firstSnapshots = new[]
+    {
+        new ConnectorFileSnapshot("one.env", "one.env", ".", "env-v1"),
+        new ConnectorFileSnapshot("one.lin", "one.lin", ".", "lin-v1"),
+        new ConnectorFileSnapshot("one.veh", "one.veh", ".", "veh-v1"),
+    };
+    var firstQueued = ConnectorSnapshotPlanner.QueueChangedSnapshots(
+        queue, firstSnapshots, DateTimeOffset.UtcNow);
+    Check(firstQueued == 3, "Initial discovery should queue the complete EMS snapshot");
+    Check(queue.Pending.Select(item => item.ClientBatchId).Distinct().Count() == 1,
+        "A complete EMS snapshot should share one batch identity");
+    Check(Path.GetExtension(queue.Pending[^1].RelativePath).Equals(".veh",
+            StringComparison.OrdinalIgnoreCase),
+        "The final core table should be queued last");
+
+    var firstBatchId = queue.Pending[0].ClientBatchId;
+    foreach (var item in firstSnapshots)
+    {
+        queue.CompletedHashes[item.RelativePath] = item.ContentSha256;
+    }
+    queue.Pending.Clear();
+    Check(ConnectorSnapshotPlanner.QueueChangedSnapshots(
+            queue, firstSnapshots, DateTimeOffset.UtcNow) == 0,
+        "An unchanged snapshot should not be queued again");
+
+    var revisedSnapshots = firstSnapshots
+        .Select(item => item.RelativePath == "one.lin" ? item with { ContentSha256 = "lin-v2" } : item)
+        .ToArray();
+    Check(ConnectorSnapshotPlanner.QueueChangedSnapshots(
+            queue, revisedSnapshots, DateTimeOffset.UtcNow) == 3,
+        "One changed file should queue the complete revised snapshot");
+    Check(queue.Pending.All(item => item.ClientBatchId != firstBatchId),
+        "A revised snapshot must receive a new batch identity");
+    Check(ConnectorSnapshotPlanner.QueueChangedSnapshots(
+            queue, revisedSnapshots, DateTimeOffset.UtcNow) == 0,
+        "A pending snapshot should not be duplicated by the next scan");
 }
 finally
 {

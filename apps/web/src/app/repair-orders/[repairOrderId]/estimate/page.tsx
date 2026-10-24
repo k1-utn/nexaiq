@@ -9,11 +9,17 @@ import { createClient } from "@/lib/supabase/server";
 
 export default async function EstimatePage({
   params,
+  searchParams,
 }: {
   params: Promise<{ repairOrderId: string }>;
+  searchParams: Promise<{ version?: string | string[] }>;
 }) {
   await connection();
   const { repairOrderId } = await params;
+  const requestedVersion = (await searchParams).version;
+  const requestedVersionId = Array.isArray(requestedVersion)
+    ? requestedVersion[0]
+    : requestedVersion;
   const supabase = await createClient();
   const { data: authData } = await supabase.auth.getClaims();
   const reviewerId = authData?.claims?.sub;
@@ -40,13 +46,13 @@ export default async function EstimatePage({
     supabase.from("vehicles").select("year, make, model, vin").eq("id", repairOrder.vehicle_id).single(),
     supabase
       .from("estimate_versions")
-      .select("id, version_number, source_media_id, parse_status, parser_name, parser_version, created_at, verified_at")
+      .select("id, version_number, source_media_id, source_system, source_sha256, parse_status, parser_name, parser_version, created_at, verified_at")
       .eq("repair_order_id", repairOrderId)
-      .order("version_number", { ascending: false })
-      .limit(1),
+      .order("version_number", { ascending: false }),
   ]);
 
-  const estimateVersion = versions?.[0];
+  const estimateVersion =
+    versions?.find((version) => version.id === requestedVersionId) ?? versions?.[0];
   if (!estimateVersion) {
     return (
       <main className="grid-noise min-h-screen px-4 py-10 sm:px-8">
@@ -62,7 +68,7 @@ export default async function EstimatePage({
     );
   }
 
-  const [{ data: lines }, { data: reviews }, { data: sourceMedia }] = await Promise.all([
+  const [{ data: lines }, { data: reviews }] = await Promise.all([
     supabase
       .from("estimate_lines")
       .select("id, source_line_number, operation_code, description, amount, raw_text, parse_confidence, line_role")
@@ -73,12 +79,15 @@ export default async function EstimatePage({
       .select("id, estimate_line_id, reviewer_id, decision, corrected_description, corrected_amount, note, supersedes_review_id, reviewed_at")
       .eq("estimate_version_id", estimateVersion.id)
       .order("reviewed_at", { ascending: true }),
-    supabase
-      .from("media")
-      .select("object_path, original_filename, content_sha256")
-      .eq("id", estimateVersion.source_media_id)
-      .maybeSingle(),
   ]);
+
+  const { data: sourceMedia } = estimateVersion.source_media_id
+    ? await supabase
+        .from("media")
+        .select("object_path, original_filename, content_sha256")
+        .eq("id", estimateVersion.source_media_id)
+        .maybeSingle()
+    : { data: null };
 
   const { data: signedSource } = sourceMedia
     ? await supabase.storage.from("repair-evidence").createSignedUrl(sourceMedia.object_path, 300)
@@ -96,17 +105,29 @@ export default async function EstimatePage({
       estimate={{
         id: estimateVersion.id,
         versionNumber: estimateVersion.version_number,
+        sourceSystem: estimateVersion.source_system,
         parseStatus: estimateVersion.parse_status,
         parserName: estimateVersion.parser_name,
         parserVersion: estimateVersion.parser_version,
         importedAt: estimateVersion.created_at,
         verifiedAt: estimateVersion.verified_at,
-        sourceFilename: sourceMedia?.original_filename ?? "Original estimate PDF",
-        sourceSha256: sourceMedia?.content_sha256 ?? null,
+        sourceFilename:
+          sourceMedia?.original_filename ??
+          (estimateVersion.source_system === "mitchell_ems"
+            ? "Mitchell EMS file set"
+            : "Original estimate PDF"),
+        sourceSha256: sourceMedia?.content_sha256 ?? estimateVersion.source_sha256,
         sourceUrl: signedSource?.signedUrl ?? null,
       }}
       lines={lines ?? []}
       reviews={reviews ?? []}
+      versions={(versions ?? []).map((version) => ({
+        id: version.id,
+        versionNumber: version.version_number,
+        sourceSystem: version.source_system,
+        parseStatus: version.parse_status,
+        importedAt: version.created_at,
+      }))}
       currentReviewerId={reviewerId}
     />
   );

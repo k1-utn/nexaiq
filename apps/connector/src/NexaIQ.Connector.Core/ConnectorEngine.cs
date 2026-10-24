@@ -50,9 +50,8 @@ public sealed class ConnectorEngine(
             throw new DirectoryNotFoundException("The configured EMS folder is not available.");
         }
 
-        var pendingPaths = state.Pending
-            .Select(item => item.RelativePath)
-            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var snapshots = new List<ConnectorFileSnapshot>();
+        var unstableDirectories = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         foreach (var path in Directory.EnumerateFiles(
                      settings.WatchFolder,
                      "*",
@@ -64,44 +63,25 @@ public sealed class ConnectorEngine(
                 continue;
             }
 
+            var relativePath = Path.GetRelativePath(settings.WatchFolder, path);
+            var relativeDirectory = Path.GetDirectoryName(relativePath) ?? ".";
             var information = new FileInfo(path);
-            if (information.Length <= 0 || information.Length > 5 * 1024 * 1024
-                || DateTimeOffset.UtcNow - information.LastWriteTimeUtc < TimeSpan.FromSeconds(2))
+            if (information.Length <= 0 || information.Length > 5 * 1024 * 1024)
             {
                 continue;
             }
-
-            var relativePath = Path.GetRelativePath(settings.WatchFolder, path);
-            if (pendingPaths.Contains(relativePath))
+            if (DateTimeOffset.UtcNow - information.LastWriteTimeUtc < TimeSpan.FromSeconds(2))
             {
+                unstableDirectories.Add(relativeDirectory);
                 continue;
             }
 
             var hash = await EmsFilePolicy.ComputeFileHashAsync(path, cancellationToken);
-            if (state.CompletedHashes.TryGetValue(relativePath, out var completedHash)
-                && string.Equals(completedHash, hash, StringComparison.Ordinal))
-            {
-                continue;
-            }
-
-            var relativeDirectory = Path.GetDirectoryName(relativePath) ?? ".";
-            if (!state.DirectoryBatchIds.TryGetValue(relativeDirectory, out var batchId))
-            {
-                batchId = Guid.NewGuid();
-                state.DirectoryBatchIds[relativeDirectory] = batchId;
-            }
-
-            state.Pending.Add(new PendingConnectorFile(
-                batchId,
-                Guid.NewGuid(),
-                path,
-                relativePath,
-                DateTimeOffset.UtcNow,
-                0,
-                DateTimeOffset.UtcNow,
-                null));
-            pendingPaths.Add(relativePath);
+            snapshots.Add(new ConnectorFileSnapshot(path, relativePath, relativeDirectory, hash));
         }
+
+        snapshots.RemoveAll(item => unstableDirectories.Contains(item.RelativeDirectory));
+        ConnectorSnapshotPlanner.QueueChangedSnapshots(state, snapshots, DateTimeOffset.UtcNow);
     }
 
     private async Task UploadPendingAsync(
@@ -116,11 +96,17 @@ public sealed class ConnectorEngine(
             await sessionStore.SaveAsync(session, cancellationToken);
         }
 
+        var blockedBatches = new HashSet<Guid>();
         foreach (var pending in state.Pending.ToArray())
         {
             cancellationToken.ThrowIfCancellationRequested();
+            if (blockedBatches.Contains(pending.ClientBatchId))
+            {
+                continue;
+            }
             if (pending.NextAttemptAtUtc > DateTimeOffset.UtcNow)
             {
+                blockedBatches.Add(pending.ClientBatchId);
                 continue;
             }
 
@@ -145,6 +131,7 @@ public sealed class ConnectorEngine(
                     LastError = exception.Message,
                 };
                 state.Pending[state.Pending.IndexOf(pending)] = retry;
+                blockedBatches.Add(pending.ClientBatchId);
                 await log.WriteAsync(
                     $"sync_retry {Path.GetFileName(pending.RelativePath)} attempt={attempts}");
             }

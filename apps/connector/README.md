@@ -14,6 +14,8 @@ On first launch, the setup window requests the browser-safe Supabase project URL
 
 The tray menu provides **Sync now**, **Open EMS folder**, **Settings**, and **Exit**. The connector scans every 15 seconds, waits for files to stop changing, skips executable/archive formats, maintains an on-disk retry queue, and retries failures with bounded exponential backoff.
 
+After an initial sync, any changed stable export file causes the connector to queue the complete folder snapshot under a new batch identity. Unchanged snapshots are not uploaded again. Files are ordered so the import cannot finalize until all earlier files in the snapshot have synchronized successfully.
+
 ## Privacy and Stage 6 boundary
 
 Files are validated, hashed, privately stored, parsed with fixture-backed dBASE tests, and matched to a repair order using the EMS repair-order reference. Imported estimates always require human verification. Customer, insurer, vendor, address, email, and memo tables (`AD1`, `AD2`, `VEN`, and `DBT`) are stored privately for source provenance but deliberately not extracted. No absolute Windows path is sent to the server.
